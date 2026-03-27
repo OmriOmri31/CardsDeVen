@@ -7,7 +7,8 @@ export const handler = async (event) => {
     const modelCandidates = [
       "gemini-2.5-flash",
       "gemini-2.5-flash-lite",
-      "gemini-2.0-flash"
+      "gemini-2.0-flash",
+      "gemini-1.5-flash"
     ];
 
     const truncate = (value, maxChars) => {
@@ -63,9 +64,9 @@ export const handler = async (event) => {
 
         if (response.ok) break;
 
-        if (response.status === 404) {
+        if (response.status === 403 || response.status === 404) {
           lastErrorText = await response.text();
-          console.log(`[Gemini] model not found: ${model}. Trying next fallback model.`);
+          console.log(`[Gemini] model unavailable (${response.status}) for ${model}. Trying next fallback model.`);
           break;
         }
 
