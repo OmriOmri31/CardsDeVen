@@ -4,8 +4,11 @@ export const handler = async (event) => {
   try {
     const { query, history, systemInstruction } = JSON.parse(event.body);
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = "gemini-1.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const modelCandidates = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash"
+    ];
 
     const truncate = (value, maxChars) => {
       if (!value) return '';
@@ -13,7 +16,7 @@ export const handler = async (event) => {
       return asString.length > maxChars ? `${asString.slice(0, maxChars)}\n...[truncated]` : asString;
     };
 
-    const optimizedSystemInstruction = truncate(systemInstruction, 5000);
+    const optimizedSystemInstruction = truncate(systemInstruction, 2200);
     const optimizedQuery = truncate(query, 1200);
     const optimizedHistory = (Array.isArray(history) ? history : [])
       .slice(-8)
@@ -35,34 +38,56 @@ export const handler = async (event) => {
 
     const retryDelaysMs = [2000, 4000, 8000];
     let response;
-    let attempt = 0;
-    while (attempt <= retryDelaysMs.length) {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+    let lastErrorText = '';
+    let usedModel = modelCandidates[0];
 
-      console.log('[Gemini] status:', response.status);
-      console.log('[Gemini] headers:', {
-        retryAfter: response.headers.get('retry-after'),
-        xRateLimitLimit: response.headers.get('x-ratelimit-limit'),
-        xRateLimitRemaining: response.headers.get('x-ratelimit-remaining'),
-        xRateLimitReset: response.headers.get('x-ratelimit-reset')
-      });
+    for (const model of modelCandidates) {
+      usedModel = model;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      let attempt = 0;
 
-      if (response.status !== 429) break;
-      if (attempt === retryDelaysMs.length) break;
+      while (attempt <= retryDelaysMs.length) {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
 
-      const waitMs = retryDelaysMs[attempt];
-      console.log(`[Gemini] 429 received. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${retryDelaysMs.length})`);
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      attempt += 1;
+        console.log('[Gemini] model/status:', model, response.status);
+        console.log('[Gemini] headers:', {
+          retryAfter: response.headers.get('retry-after'),
+          xRateLimitLimit: response.headers.get('x-ratelimit-limit'),
+          xRateLimitRemaining: response.headers.get('x-ratelimit-remaining'),
+          xRateLimitReset: response.headers.get('x-ratelimit-reset')
+        });
+
+        if (response.ok) break;
+
+        if (response.status === 404) {
+          lastErrorText = await response.text();
+          console.log(`[Gemini] model not found: ${model}. Trying next fallback model.`);
+          break;
+        }
+
+        if (response.status === 429 && attempt < retryDelaysMs.length) {
+          const waitMs = retryDelaysMs[attempt];
+          console.log(`[Gemini] 429 received on ${model}. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${retryDelaysMs.length})`);
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          attempt += 1;
+          continue;
+        }
+
+        lastErrorText = await response.text();
+        break;
+      }
+
+      if (response?.ok) break;
+      if (response?.status && response.status !== 404) break;
     }
 
     if (!response.ok) {
-      const errorDetails = await response.text();
-      return { statusCode: response.status, body: errorDetails };
+      const errorDetails = lastErrorText || (await response.text());
+      return { statusCode: response.status, body: JSON.stringify({ error: errorDetails, model: usedModel }) };
     }
 
     const data = await response.json();
