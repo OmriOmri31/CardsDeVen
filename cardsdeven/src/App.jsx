@@ -365,9 +365,6 @@ const fetchGeminiAIResponse = async (query, history, systemInstruction, signal) 
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        throw new Error("429: Too Many Requests. הגענו למגבלת הפניות החינמית של גוגל לדקה זו. אנא המתן כדקה ונסה שוב! ⏳");
-      }
       const errorDetails = await response.text();
       throw new Error(`Status ${response.status}: ${errorDetails}`);
     }
@@ -435,6 +432,7 @@ export default function App() {
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const aiRequestInFlightRef = useRef(false);
   const [showCardForm, setShowCardForm] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
   const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] });
@@ -553,7 +551,8 @@ export default function App() {
 
   const handleSendAI = async (e) => {
     e.preventDefault();
-    if (!aiInput.trim() || isAiTyping) return;
+    if (!aiInput.trim() || isAiTyping || aiRequestInFlightRef.current) return;
+    aiRequestInFlightRef.current = true;
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
     const userText = aiInput.trim();
@@ -561,10 +560,10 @@ export default function App() {
     setAiMessages(newMessages);
     setAiInput('');
     setIsAiTyping(true);
-    const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(',');
-    const activeDiscounts = DISCOUNTS_DATA.filter((d) => userClubs.includes(d.c)).map((d) => `${d.m}-${d.d}`).join(' | ');
+    const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
+    const activeDiscounts = DISCOUNTS_DATA.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
-    const merchantNames = Object.keys(KNOWN_MERCHANTS).map((k) => k.split('(')[0].trim()).join(', ');
+    const merchantNames = Object.keys(KNOWN_MERCHANTS).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
     const systemInstruction = `You're an Israeli shopping assistant. Speak Hebrew.
 User Clubs: ${activeClubsList || 'None'}
 Wallet: ${walletString || 'Empty'}
@@ -576,7 +575,10 @@ Task: Find best deals based on wallet and clubs. Be concise. Use emojis.`;
       if (responseText) setAiMessages([...newMessages, { role: 'model', text: responseText }]);
     } catch (err) {
       if (err.name !== 'AbortError') setAiMessages([...newMessages, { role: 'model', text: `אופס, משהו השתבש בחיבור שלי. 😅\n\n${err.message}` }]);
-    } finally { setIsAiTyping(false); }
+    } finally {
+      setIsAiTyping(false);
+      aiRequestInFlightRef.current = false;
+    }
   };
 
   const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] }); setEditingCardId(null); setShowCardForm(false); };
