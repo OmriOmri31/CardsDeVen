@@ -377,6 +377,32 @@ const fetchGeminiAIResponse = async (query, history, systemInstruction, signal) 
   }
 };
 
+const detectInputLanguage = (text) => {
+  if (!text) return 'he';
+  const hebrewMatches = (text.match(/[\u0590-\u05FF]/g) || []).length;
+  const latinMatches = (text.match(/[A-Za-z]/g) || []).length;
+  if (latinMatches > hebrewMatches) return 'en';
+  return 'he';
+};
+
+const renderChatText = (text) => {
+  if (!text) return null;
+  const lines = String(text).split('\n');
+  return lines.map((line, lineIdx) => {
+    const parts = line.split(/(\*\*.*?\*\*)/g);
+    return (
+      <React.Fragment key={`line-${lineIdx}`}>
+        {parts.map((part, partIdx) => {
+          const isBold = part.startsWith('**') && part.endsWith('**') && part.length > 4;
+          const content = isBold ? part.slice(2, -2) : part;
+          return isBold ? <strong key={`part-${lineIdx}-${partIdx}`}>{content}</strong> : <React.Fragment key={`part-${lineIdx}-${partIdx}`}>{content}</React.Fragment>;
+        })}
+        {lineIdx < lines.length - 1 && <br />}
+      </React.Fragment>
+    );
+  });
+};
+
 const RULE_TYPES = {
   PERMANENT: { id: 'permanent', label: 'Permanent', icon: InfinityIcon },
   MONTHLY: { id: 'monthly', label: 'Monthly Reset', icon: RefreshCw },
@@ -556,6 +582,7 @@ export default function App() {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
     const userText = aiInput.trim();
+    const preferredLanguage = detectInputLanguage(userText);
     const newMessages = [...aiMessages, { role: 'user', text: userText }];
     setAiMessages(newMessages);
     setAiInput('');
@@ -574,7 +601,8 @@ USER'S DATA:
 - Supported Merchants: ${merchantNames}
 
 ### TONE & PERSONALITY:
-- Reply natively in the EXACT language the user used (usually Hebrew).
+- MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only. Do not mix languages unless user asks.
+- Reply natively in the EXACT language the user used.
 - Be highly energetic, direct, and slightly humorous (Israeli style). Use emojis appropriately (e.g., "מישהו פה מתכנן חגיגה 🍕", "ברור, בוא נארגן לך הופעה פצצה לחתונה 👔").
 - DO NOT be generic. Do not just list stores. Be a decisive, mathematical advisor.
 
@@ -991,14 +1019,24 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                 <button onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); setAiMessages([{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }]); setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
               </div>
               <div className="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                    Tip: ask with budget + item + area for better combo precision.
+                  </p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/60 dark:bg-slate-950/40">
                   {aiMessages.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'model' && <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mr-3 mt-1"><Bot size={16} className="text-blue-600 dark:text-blue-400" /></div>}
-                      <div className={`max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-sm text-left' : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-100 dark:border-slate-700/50 whitespace-pre-wrap leading-relaxed text-right'}`} dir={msg.role === 'model' ? "rtl" : "auto"}>{msg.text}</div>
+                      {msg.role === 'model' && <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mr-3 mt-1 shadow-sm"><Bot size={16} className="text-blue-600 dark:text-blue-400" /></div>}
+                      <div className={`max-w-[88%] sm:max-w-[76%] p-4 rounded-2xl shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-sm text-left' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-200 dark:border-slate-700/50 leading-relaxed text-right'}`} dir={msg.role === 'model' ? "rtl" : "auto"}>
+                        <div className={`text-[10px] uppercase tracking-wider mb-1.5 ${msg.role === 'user' ? 'text-blue-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                          {msg.role === 'user' ? 'You' : 'Advisor'}
+                        </div>
+                        <div className="whitespace-pre-wrap">{renderChatText(msg.text)}</div>
+                      </div>
                     </div>
                   ))}
-                  {isAiTyping && <div className="flex justify-start"><div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mr-3 mt-1"><Bot size={16} className="text-blue-600 dark:text-blue-400" /></div><div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl rounded-tl-sm border border-slate-100 dark:border-slate-700/50"><Loader2 className="animate-spin text-slate-400" size={20} /></div></div>}
+                  {isAiTyping && <div className="flex justify-start"><div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mr-3 mt-1"><Bot size={16} className="text-blue-600 dark:text-blue-400" /></div><div className="bg-white dark:bg-slate-800 p-4 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700/50 shadow-sm"><Loader2 className="animate-spin text-slate-400" size={20} /></div></div>}
                   <div ref={chatEndRef} />
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
