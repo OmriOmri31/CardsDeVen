@@ -1,0 +1,41 @@
+name: Daily Behatsdaa Scraper
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # Runs automatically every day at 08:00 UTC
+  workflow_dispatch: # This allows you to click a button to run it manually
+
+jobs:
+  scrape-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required so the bot can commit the new JSON file
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright firebase-admin
+          playwright install chromium
+
+      - name: Run Scraper
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          BEHATSDAA_ID: ${{ secrets.BEHATSDAA_ID }}
+        run: python scraper.py
+
+      - name: Commit and Push JSON
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add public/data.json
+          git commit -m "chore: auto-update discount data" || echo "No changes to commit"
+          git push
