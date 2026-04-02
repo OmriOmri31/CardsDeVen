@@ -25,7 +25,6 @@ const CATEGORY_ICONS = {
 };
 const CATEGORIES = Object.keys(CATEGORY_ICONS);
 
-// Map the Hebrew categories from your scraper to the App's English categories
 const HEBREW_TO_APP_CATEGORIES = {
   "בידור וסטנד אפ": "Cinemas", 
   "מופעים ומוזיקה": "Cinemas",
@@ -38,7 +37,6 @@ const HEBREW_TO_APP_CATEGORIES = {
   "כללי": "Other"
 };
 
-// --- DOMAIN KNOWLEDGE: CATEGORY SEARCH ALIASES ---
 const CATEGORY_ALIASES = {
   "Supermarkets & Groceries": ["supermarket", "grocery", "groceries", "סופר", "סופרמרקט", "מכולת", "מזון"],
   "Fashion & Apparel": ["fashion", "apparel", "clothing", "clothes", "shoes", "אופנה", "בגדים", "בגדי", "הנעלה", "נעליים", "לבוש"],
@@ -56,7 +54,6 @@ const CATEGORY_ALIASES = {
   "Other": ["other", "אחר", "שונות", "ספרים"]
 };
 
-// --- DOMAIN KNOWLEDGE: ISRAELI BENEFIT PROGRAMS ---
 const PROGRAMS = {
   HG: { id: 'HG', name: 'HappyGift Global', type: 'open_loop', color: 'bg-gradient-to-br from-pink-500 to-rose-600', description: 'Mastercard. Works almost everywhere.' },
   FTR: { id: 'FTR', name: 'Fighter (Miluim)', type: 'mcc', color: 'bg-gradient-to-br from-stone-700 to-stone-900', description: 'MCC Restricted. Restaurants, Leisure, Fashion.' },
@@ -77,7 +74,6 @@ const CLUBS = {
   DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', color: 'bg-slate-900' }
 };
 
-// Hardcoded deals minus the Behatsdaa ones (since we pull those live now)
 const HARDCODED_DISCOUNTS = [
   { m: "Domino's Pizza (דומינוס פיצה)", c: "PAIS_PLUS", d: "תו קנייה 150 ב-99 ש\"ח / 100 ב-69 ש\"ח" },
   { m: "Pizza Hut (פיצה האט)", c: "PAIS_PLUS", d: "2 פיצות + תוספת + מקלות שוקולד ב-120 ש\"ח" },
@@ -329,7 +325,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -338,14 +334,13 @@ export default function App() {
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // --- NEW DATA PIPELINE STATES ---
   const [liveDeals, setLiveDeals] = useState([]);
   const [dynamicMerchants, setDynamicMerchants] = useState(INITIAL_KNOWN_MERCHANTS);
 
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
-  const [aiMessages, setAiMessages] = useState([{ role: 'model', text: 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'model', text: 'מה המצב? תגיד לי מה אתה רוצה לקנות, נראה איך לא תצא פראייר היום.' }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
@@ -356,13 +351,12 @@ export default function App() {
   const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [newExpense, setNewExpense] = useState({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '' });
+  const [newExpense, setNewExpense] = useState({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', date: new Date().toISOString().split('T')[0] });
   const [merchantSearch, setMerchantSearch] = useState('');
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
   const [clubSearch, setClubSearch] = useState('');
 
-  // --- FETCH SCRAPED DATA ON LOAD ---
   useEffect(() => {
     const fetchLiveDeals = async () => {
       try {
@@ -373,21 +367,17 @@ export default function App() {
         const flattenedDeals = [];
         const updatedMerchants = { ...INITIAL_KNOWN_MERCHANTS };
 
-        // 1. Iterate through Master Categories
         Object.entries(json.data || {}).forEach(([masterCategory, venues]) => {
           const mappedAppCategory = HEBREW_TO_APP_CATEGORIES[masterCategory] || "Other";
 
-          // 2. Iterate through Venues
           Object.entries(venues).forEach(([venueName, showsObject]) => {
             
-            // 3. Iterate through the Show Names
             Object.entries(showsObject).forEach(([showName, showArray]) => {
               
               let trueMerchantName = venueName;
               
               const findTrueMerchant = (text) => {
                 if (!text) return null;
-                // Add spaces to enforce STRICT whole-word matching (fixes the Pull and Bear bug)
                 const paddedText = ` ${text.toLowerCase().replace(/[\-\(\)]/g, ' ')} `;
                 
                 for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
@@ -400,18 +390,15 @@ export default function App() {
                 return null;
               };
 
-              // 1. Try to find known merchant in the specific show/deal title FIRST
               const foundFromShow = findTrueMerchant(showName) || findTrueMerchant(showArray[0]?.title);
               
               if (foundFromShow) {
                  trueMerchantName = foundFromShow;
               } else {
-                 // 2. Fallback: try the venue name
                  const foundFromVenue = findTrueMerchant(venueName);
                  if (foundFromVenue) {
                      trueMerchantName = foundFromVenue;
                  } else {
-                     // 3. If we don't know it, promote generic buckets
                      const genericKeywords = ["כללי", "קולנוע", "צרכנות", "אטרקציות", "ספא", "נופש", "מופעים", "מזון מהיר", "מסעדות", "חדרי בריחה", "הופעות", "סטנדאפ"];
                      const isGenericVenue = genericKeywords.some(g => venueName.includes(g));
                      if (isGenericVenue) {
@@ -420,7 +407,6 @@ export default function App() {
                  }
               }
 
-              // Inject the scraped venue into our known merchants database
               if (!updatedMerchants[trueMerchantName]) {
                 updatedMerchants[trueMerchantName] = {
                   cat: mappedAppCategory,
@@ -429,7 +415,6 @@ export default function App() {
                 };
               }
 
-              // Add the deals
               showArray.forEach(show => {
                 flattenedDeals.push({
                   m: trueMerchantName,
@@ -450,13 +435,12 @@ export default function App() {
 
     fetchLiveDeals();
   }, []);
-  // --- COMBINE HARDCODED WITH SCRAPED ---
+
   const allDiscountsData = useMemo(() => {
     return [...HARDCODED_DISCOUNTS, ...liveDeals];
   }, [liveDeals]);
 
 
-  // --- HELPER FUNCTIONS MOVED INSIDE COMPONENT TO ACCESS DYNAMIC MERCHANTS ---
   const getLogoPath = (merchantString) => {
     if (!merchantString) return '';
     const merchData = dynamicMerchants[merchantString];
@@ -535,7 +519,6 @@ export default function App() {
           return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
         }) || data.cat.toLowerCase().includes(q);
 
-        // NEW: Check if the actual deal text contains the search query
         const hasMatchingDeal = allDiscountsData.some(
           (deal) => deal.m === name && deal.d.toLowerCase().includes(q)
         );
@@ -560,6 +543,7 @@ export default function App() {
         return nameA.localeCompare(nameB);
       }).slice(0, maxResults);
   };
+
   const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
     const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
     return (
@@ -644,7 +628,25 @@ export default function App() {
   };
 
   const cardBalances = useMemo(() => cards.map((card) => {
-    const spent = expenses.filter((e) => e.cardId === card.id).reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const spent = expenses.filter((e) => {
+      if (e.cardId !== card.id) return false;
+      
+      // Feature: Monthly Resets
+      // If a card resets monthly, we ONLY deduct expenses that are scheduled for THIS CURRENT month
+      if (card.ruleType === 'monthly') {
+        const expenseDate = new Date(e.date || e.updatedAt);
+        if (expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear) {
+          return true;
+        }
+        return false;
+      }
+      return true;
+    }).reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
     const derivedCats = getDerivedCategories(card);
     return { ...card, spent, remaining: parseFloat(card.balance) - spent, derivedCats };
   }), [cards, expenses, dynamicMerchants]);
@@ -675,7 +677,7 @@ export default function App() {
     return Object.entries(grouped).filter(([_, data]) => data.total > 0).sort((a, b) => b[1].total - a[1].total);
   }, [cardBalances]);
 
-  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)), [expenses]);
+  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => new Date(b.date || b.updatedAt) - new Date(a.date || a.updatedAt)), [expenses]);
 
   useEffect(() => {
     if (activeTab === 'ai') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -695,31 +697,37 @@ export default function App() {
     setAiInput('');
     setIsAiTyping(true);
 
-    const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
+    const walletString = cardBalances.map((c) => {
+      const ruleTxt = c.ruleType === 'monthly' ? '(Resets on the 1st of the month)' : '';
+      return `${c.name}: ₪${c.remaining} remaining out of ₪${c.balance} ${ruleTxt}`;
+    }).join(' | ');
+    
     const merchantNames = Object.keys(dynamicMerchants).map((k) => k.split('(')[0].trim()).join(', ');
     
-    const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
-Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
+    const systemInstruction = `You are a highly sarcastic, street-smart Israeli financial advisor. 
+Your goal is to save the user money, but you speak like a real person from Tel Aviv—dry humor, direct, no generic AI cringe. 
 
 ### TONE & PERSONALITY:
-- MANDATORY OUTPUT LANGUAGE: \${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only.
+- MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only.
 - Reply natively in the EXACT language the user used.
-- Be highly energetic, direct, and slightly humorous (Israeli style). Use emojis appropriately.
+- Be highly sarcastic and street-smart. Cut the bullshit. Do NOT sound like an enthusiastic AI cheerleader. Avoid cringe emojis like 🌟 or 💡. Use realistic humor (e.g., "שמע אחי, אתה חי בסרט אם תשלם מחיר מלא", "בוא נראה איך לא תצא פראייר היום").
 - Answer normally and naturally. DO NOT include a "Call to Action" or ask questions at the end.
-- IMPORTANT: When mentioning where a deal comes from, ONLY use the official club names (like "בהצדעה", "פיס פלוס", or "DreamCard"). NEVER mention website subcategories like "מבצעים לוהטים", "שוברי ארוחות ומזון מהיר", etc.
+- IMPORTANT: When mentioning where a deal comes from, ONLY use the official club names (like "בהצדעה", "פיס פלוס", or "DreamCard"). NEVER mention website subcategories.
+- FUTURE PLANNING: Notice if a user's card "Resets on the 1st of the month". If they are planning a future purchase, explicitly tell them to wait for the 1st so the card refills!
 
 ### STRICT RESPONSE FORMAT:
 Your response must follow this natural structure (use bold text for emphasis):
 
-**Witty Opening:** 1-2 lines acknowledging the request with a fun, enthusiastic, saracstic tone. Ron Swanson vibes.
+**The "Tachles" Opening:** 1-2 lines with dry Israeli humor acknowledging the request.
 
-🌟 **השילוב המנצח (The Winning Combo):** Tell them EXACTLY where to go, which discount to claim from their official club (e.g., "דרך בהצדעה"), and exactly which card from their wallet to use. You MUST mention their specific card balance.
-*Example: "לך לפוקס. יש לך דרך 'בהצדעה' שובר של 150 ב-100 ש"ח, ותשלם עליו עם כרטיס ה-HappyGift שלך (יש לך שם 500 ש"ח!)."*
+**הקומבינה (The Winning Combo):** Tell them EXACTLY where to go, which discount to claim from their official club (e.g., "דרך בהצדעה"), and exactly which card from their wallet to use. Mention their card balance.
+*Example: "לך לפוקס. יש לך דרך 'בהצדעה' שובר של 150 ב-100 ש"ח, תעביר את זה בכרטיס HappyGift שלך (יש לך שם 500 ש"ח, תחגוג)."*
 
-💡 **עוד אופציות טובות (Alternative Options):** List 1-2 other relevant merchants from their data where they have valid cards or discounts (remembering to state the official club).
+**תוכנית ב' (Alternative Options):** List 1-2 other relevant options from their data, stating the official club.
 
-⚠️ **שים לב לתקציב (Budget Note - ONLY IF RELEVANT):** If the estimated cost of the item is higher than their available card balance, explicitly tell them they will need to do a "Split Payment" (לפצל תשלום) at the register.`;    try {
-      // We pass the raw data so the backend can search it using Vectors
+**אזהרת תקציב (Budget Note - ONLY IF RELEVANT):** If the cost is higher than their available balance, explicitly tell them they'll need to do a "Split Payment" (לפצל תשלום) at the register. Or, if the card resets on the 1st, tell them to wait!`;
+
+    try {
       const payload = {
          query: userText, 
          history: aiMessages, 
@@ -749,7 +757,7 @@ Your response must follow this natural structure (use bold text for emphasis):
   };
 
   const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] }); setEditingCardId(null); setShowCardForm(false); };
-  const resetExpenseForm = () => { setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '' }); setMerchantSearch(''); setEditingExpenseId(null); setShowExpenseForm(false); };
+  const resetExpenseForm = () => { setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', date: new Date().toISOString().split('T')[0] }); setMerchantSearch(''); setEditingExpenseId(null); setShowExpenseForm(false); };
 
   const handleSaveCard = async (e) => {
     e.preventDefault();
@@ -781,7 +789,7 @@ Your response must follow this natural structure (use bold text for emphasis):
     const expenseData = {
       name: isSplit ? (newExpense.name.includes('(Part') ? newExpense.name : `${newExpense.name} (Part 1)`) : newExpense.name,
       amount: saveAmount, category: newExpense.category, merchantName: newExpense.merchantName, cardId: newExpense.cardId,
-      isCompleted: newExpense.isCompleted || false, updatedAt: editingExpenseId ? (newExpense.updatedAt || new Date().toISOString()) : new Date().toISOString()
+      isCompleted: newExpense.isCompleted || false, date: newExpense.date, updatedAt: editingExpenseId ? (newExpense.updatedAt || new Date().toISOString()) : new Date().toISOString()
     };
     if (editingExpenseId) await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), editingExpenseId), expenseData);
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'expenses')), expenseData);
@@ -806,7 +814,7 @@ Your response must follow this natural structure (use bold text for emphasis):
   const deleteCard = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), id)); showToastMsg('Card removed'); } };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
   const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [] }); setEditingCardId(card.id); setShowCardForm(true); };
-  const startEditExpense = (expense) => { setNewExpense({ ...expense }); setMerchantSearch(expense.merchantName || ''); setEditingExpenseId(expense.id); setShowExpenseForm(true); };
+  const startEditExpense = (expense) => { setNewExpense({ ...expense, date: expense.date || expense.updatedAt.split('T')[0] }); setMerchantSearch(expense.merchantName || ''); setEditingExpenseId(expense.id); setShowExpenseForm(true); };
   const startQuickExpense = (cardId) => { resetExpenseForm(); setNewExpense((prev) => ({ ...prev, cardId })); setShowExpenseForm(true); };
   const handleMerchantSelect = (name, cat) => { setMerchantSearch(name); setNewExpense({ ...newExpense, merchantName: name, category: cat, cardId: '' }); setShowMerchantSuggestions(false); };
   const toggleCategorySelection = (cat) => {
@@ -956,28 +964,49 @@ Your response must follow this natural structure (use bold text for emphasis):
                     const percentRemaining = Math.max(0, Math.min(100, (card.remaining / parseFloat(card.balance)) * 100));
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
                     return (
-                      <div key={card.id} className="relative group perspective-1000">
-                        <div className={`${card.color || GRADIENTS[0]} rounded-[2rem] p-8 text-white shadow-xl hover:shadow-2xl transition-all duration-300 aspect-[1.58/1] flex flex-col justify-between relative overflow-hidden ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-slate-950' : ''}`}>
+                      <div key={card.id} className="relative group perspective-1000 flex flex-col h-full">
+                        <div className={`${card.color || GRADIENTS[0]} rounded-[2rem] p-6 sm:p-8 text-white shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden flex flex-col flex-1 ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-slate-950' : ''}`}>
                           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-                          <div className="flex justify-between items-start relative z-10">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1"><h3 className="font-bold text-2xl tracking-tight">{card.name}</h3><span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border border-white/20">{progData.name}</span></div>
-                              <div className={`flex items-center gap-2 text-xs font-medium uppercase tracking-wider ${isExpiringSoon ? 'text-orange-200 font-bold' : 'text-white/80'}`}><ruleData.icon size={14} /> {ruleData.label}{card.ruleType === 'expires' && card.expiryDate && ` • ${new Date(card.expiryDate).toLocaleDateString()}`}{isExpiringSoon && ' (EXPIRING!)'}</div>
+                          
+                          {/* UX Fix: Moved Edit & Delete to top right with clear spacing */}
+                          <div className="absolute top-4 right-4 flex gap-3 z-20">
+                            <button onClick={() => startEditCard(card)} className="p-2.5 bg-white/20 hover:bg-white/40 rounded-full backdrop-blur-md transition-colors shadow-sm"><Edit2 size={16} /></button>
+                            <button onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 bg-black/20 hover:bg-red-500/80 rounded-full backdrop-blur-md transition-colors text-white shadow-sm"><Trash2 size={16} /></button>
+                          </div>
+
+                          <div className="flex-1 relative z-10 mt-12 sm:mt-8">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-bold text-2xl tracking-tight">{card.name}</h3>
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <button onClick={() => startQuickExpense(card.id)} className="bg-white text-slate-900 hover:bg-emerald-400 hover:text-white p-2.5 rounded-full shadow-lg transition-colors flex items-center gap-2 group/btn"><Zap size={18} className="fill-current" /><span className="hidden sm:group-hover/btn:block text-xs font-bold uppercase tracking-wider pr-2">Quick Spend</span></button>
-                              <div className="bg-white/20 backdrop-blur-md p-1.5 rounded-xl opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex gap-1">
-                                <button onClick={() => startEditCard(card)} className="p-2 hover:bg-white/20 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                                <button onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2 hover:bg-red-500/50 rounded-lg transition-colors text-red-100"><Trash2 size={16} /></button>
-                              </div>
+                            <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border border-white/20 inline-block mb-3">{progData.name}</span>
+                            <div className={`flex items-center gap-2 text-xs font-medium uppercase tracking-wider ${isExpiringSoon ? 'text-orange-200 font-bold' : 'text-white/80'}`}>
+                              <ruleData.icon size={14} /> {ruleData.label}
+                              {card.ruleType === 'expires' && card.expiryDate && ` • ${new Date(card.expiryDate).toLocaleDateString()}`}
+                              {isExpiringSoon && ' (EXPIRING!)'}
                             </div>
                           </div>
-                          <div className="relative z-10">
-                            <div className="flex justify-between items-end mb-3">
-                              <div><div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Available</div><div className="text-4xl font-black font-mono tracking-tight">₪{card.remaining.toLocaleString()}</div></div>
-                              <div className="text-right"><div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Total Limit</div><div className="text-lg font-bold">₪{parseFloat(card.balance).toLocaleString()}</div></div>
+
+                          <div className="relative z-10 mt-8">
+                            <div className="flex justify-between items-end mb-4">
+                              <div>
+                                <div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Available</div>
+                                <div className="text-4xl font-black font-mono tracking-tight">₪{card.remaining.toLocaleString()}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Total Limit</div>
+                                <div className="text-lg font-bold">₪{parseFloat(card.balance).toLocaleString()}</div>
+                              </div>
                             </div>
-                            <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden backdrop-blur-sm"><div className="bg-white h-full rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${percentRemaining}%` }}><div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/50 animate-[shimmer_2s_infinite]"></div></div></div>
+                            <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden backdrop-blur-sm mb-6">
+                              <div className="bg-white h-full rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${percentRemaining}%` }}>
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/50 animate-[shimmer_2s_infinite]"></div>
+                              </div>
+                            </div>
+                            
+                            {/* UX Fix: Full-width clear Quick Spend button */}
+                            <button onClick={() => startQuickExpense(card.id)} className="w-full bg-white/10 hover:bg-emerald-400 hover:text-white border border-white/20 p-3.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 font-bold group/btn active:scale-[0.98]">
+                              <Zap size={18} className="fill-current group-hover/btn:animate-pulse" /> Log Purchase
+                            </button>
                           </div>
                         </div>
                         <div className="px-4 py-4 flex flex-wrap gap-2">{card.derivedCats.map((cat) => (<span key={cat} className="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-1.5">{CATEGORY_ICONS[cat]} {cat}</span>))}</div>
@@ -1005,6 +1034,7 @@ Your response must follow this natural structure (use bold text for emphasis):
                     {sortedExpenses.map((expense) => {
                       const sourceCard = cards.find((c) => c.id === expense.cardId);
                       const progColor = sourceCard ? (PROGRAMS[sourceCard.programId || 'CUSTOM'] || PROGRAMS.CUSTOM).color : 'bg-slate-200';
+                      const expDate = new Date(expense.date || expense.updatedAt);
                       return (
                         <div key={expense.id} className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors group ${expense.isCompleted ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
                           <div className="flex items-center gap-4 sm:gap-5">
@@ -1014,7 +1044,7 @@ Your response must follow this natural structure (use bold text for emphasis):
                                 {expense.name}
                                 {expense.merchantName && <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1"><MerchantIcon merchantName={expense.merchantName} category={expense.category} className="w-4 h-4 rounded-sm border-0" />{expense.merchantName.split('(')[0].trim()}</span>}
                               </div>
-                              <div className="flex flex-wrap items-center gap-2 text-xs"><span className="font-medium text-slate-500">{CATEGORY_ICONS[expense.category]} {expense.category}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span></div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs"><span className="font-medium text-slate-500">{CATEGORY_ICONS[expense.category]} {expense.category}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-medium text-slate-500">{expDate.toLocaleDateString()}</span></div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-16 sm:pl-0">
@@ -1047,7 +1077,6 @@ Your response must follow this natural structure (use bold text for emphasis):
                       if (matches.length === 0) return <div className="text-white/80 font-medium bg-white/10 p-4 rounded-2xl border border-white/20">Merchant not found in official database. Generic category rules will apply.</div>;
                       return matches.map(([searchMatch, mData]) => {
                         const acceptedCards = sortedCardBalances.filter((c) => checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
-                        // Check against the combined data (Hardcoded + Live Scraped)
                         const merchantDeals = allDiscountsData.filter((d) => d.m === searchMatch && userClubs.includes(d.c));
                         return (
                           <div key={searchMatch} className="animate-in slide-in-from-bottom-2 fade-in bg-white/10 p-5 rounded-2xl border border-white/20 shadow-md">
@@ -1082,6 +1111,91 @@ Your response must follow this natural structure (use bold text for emphasis):
                   </div>
                 )}
               </div>
+
+              {/* Coverage Matrix Implementation */}
+              <div className="mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Wallet Coverage</h2>
+                  <p className="text-slate-500 dark:text-slate-400 mt-1">See exactly which cards work in which shopping categories.</p>
+                </div>
+                
+                <div className="mt-6 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                    <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2"><PieChart size={20}/> Category Matrix</h3>
+                  </div>
+                  
+                  <div className="p-6">
+                    {(() => {
+                      const uniqueCategories = [...new Set(cardBalances.flatMap(c => c.derivedCats || []))].sort();
+                      if (uniqueCategories.length === 0) return <div className="text-slate-500 dark:text-slate-400 text-center py-8">No coverage data. Add some cards first!</div>;
+
+                      return (
+                        <>
+                          {/* Mobile Layout */}
+                          <div className="sm:hidden space-y-4">
+                            {uniqueCategories.map(cat => (
+                              <div key={cat} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                <div className="font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                                  <span>{CATEGORY_ICONS[cat]}</span> {cat}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {cardBalances.filter(c => c.derivedCats.includes(cat)).map(c => (
+                                    <span key={c.id} className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm">
+                                      {c.name}
+                                    </span>
+                                  ))}
+                                  {cardBalances.filter(c => c.derivedCats.includes(cat)).length === 0 && (
+                                    <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl">No Coverage</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Desktop Layout */}
+                          <div className="hidden sm:block overflow-x-auto pb-4">
+                            <table className="w-full min-w-[800px] border-collapse">
+                              <thead>
+                                <tr>
+                                  <th className="sticky left-0 bg-white dark:bg-slate-900 p-4 text-left font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-xs border-b border-slate-200 dark:border-slate-700 z-10 w-48 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Coverage Areas</th>
+                                  {cardBalances.map(card => (
+                                    <th key={card.id} className="p-4 text-center border-b border-slate-200 dark:border-slate-700">
+                                      <div className="flex flex-col items-center gap-1">
+                                        <div className={`w-3 h-3 rounded-full ${PROGRAMS[card.programId || 'CUSTOM']?.color || 'bg-slate-500'}`}></div>
+                                        <div className="font-bold text-slate-800 dark:text-slate-200 text-sm whitespace-nowrap">{card.name}</div>
+                                        <div className="text-[9px] text-slate-400 uppercase tracking-widest">{PROGRAMS[card.programId || 'CUSTOM']?.name}</div>
+                                      </div>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                {uniqueCategories.map(cat => (
+                                  <tr key={cat} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                    <td className="sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/30 p-4 font-semibold text-slate-700 dark:text-slate-300 text-sm flex items-center gap-2 whitespace-nowrap border-r border-slate-100 dark:border-slate-800/50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                      <span>{CATEGORY_ICONS[cat]}</span> {cat}
+                                    </td>
+                                    {cardBalances.map(card => (
+                                      <td key={card.id} className="p-4 text-center">
+                                        {card.derivedCats.includes(cat) ? (
+                                          <CheckCircle2 className="mx-auto text-emerald-500 dark:text-emerald-400" size={20} />
+                                        ) : (
+                                          <div className="w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto"></div>
+                                        )}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -1129,7 +1243,7 @@ Your response must follow this natural structure (use bold text for emphasis):
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[80vh] flex flex-col">
               <div className="flex justify-between items-end">
                 <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Assistant</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Ask me what to buy, and I'll find the best deal.</p></div>
-                <button onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); setAiMessages([{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }]); setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
+                <button onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); setAiMessages([{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה. אז תכלס, על מה אנחנו חוסכים עכשיו?' }]); setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
               </div>
               <div className="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
@@ -1256,30 +1370,45 @@ Your response must follow this natural structure (use bold text for emphasis):
                 </select>
               </div>
             </div>
-
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Purchase Date (For Planning)</label>
+                <input type="date" required value={newExpense.date || new Date().toISOString().split('T')[0]} onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" />
+              </div>
+              
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Estimated Cost (₪)</label>
                 <input type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value, cardId: '' })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-mono font-bold text-lg text-emerald-600 dark:text-emerald-400" placeholder="0.00" />
                 {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-white border-slate-300" /><label htmlFor="isManualSplit" className="text-xs font-semibold text-slate-500 dark:text-slate-400 cursor-pointer">Split this payment across multiple cards?</label></div>}
               </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
-                <select required disabled={!newExpense.category} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
-                  <option value="" disabled>{!newExpense.category ? 'Awaiting category...' : '-- Evaluated Cards --'}</option>
-                  {sortedCardBalances.map((card) => {
-                    if (!newExpense.category) return null;
-                    const compatibility = checkCompatibility(card, newExpense.category, newExpense.merchantName);
-                    const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
-                    const canAfford = isEditingCurrent || card.remaining >= parseFloat(newExpense.amount || 0);
-                    const isAllowedByRules = compatibility.allowed;
-                    const isSelectable = isAllowedByRules && card.remaining > 0;
-                    const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
-                    return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Available: ₪{card.remaining.toLocaleString()}) {!isAllowedByRules ? '- Rule Blocked' : (!canAfford ? '- Requires Split' : '')}</option>;
-                  })}
-                </select>
-                {newExpense.category && cardBalances.filter((c) => checkCompatibility(c, newExpense.category, newExpense.merchantName).allowed).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this merchant/category.</p>}
-              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
+              <select required disabled={!newExpense.category} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
+                <option value="" disabled>{!newExpense.category ? 'Awaiting category...' : '-- Evaluated Cards --'}</option>
+                {sortedCardBalances.map((card) => {
+                  if (!newExpense.category) return null;
+                  const compatibility = checkCompatibility(card, newExpense.category, newExpense.merchantName);
+                  const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
+                  const canAfford = isEditingCurrent || card.remaining >= parseFloat(newExpense.amount || 0);
+                  const isAllowedByRules = compatibility.allowed;
+                  
+                  // Monthly cards can plan future purchases even if balance is currently 0, assuming refill
+                  let isSelectable = false;
+                  if (isAllowedByRules) {
+                    if (card.remaining > 0) isSelectable = true;
+                    if (card.ruleType === 'monthly') isSelectable = true; 
+                  }
+                  
+                  const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
+                  const monthlyTag = card.ruleType === 'monthly' ? ` (Monthly Total Limit: ₪${card.balance})` : '';
+                  
+                  return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Current Available: ₪{card.remaining.toLocaleString()}){monthlyTag} {!isAllowedByRules ? '- Rule Blocked' : (!canAfford && card.ruleType !== 'monthly' ? '- Requires Split' : '')}</option>;
+                })}
+              </select>
+              {newExpense.category && cardBalances.filter((c) => checkCompatibility(c, newExpense.category, newExpense.merchantName).allowed).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this merchant/category.</p>}
             </div>
 
             {newExpense.isManualSplit && !editingExpenseId && newExpense.cardId && (
@@ -1297,7 +1426,12 @@ Your response must follow this natural structure (use bold text for emphasis):
                 let isSplitNeeded = false;
                 if (selectedCard && !editingExpenseId) {
                   if (newExpense.isManualSplit && newExpense.chargeAmount) actualLogAmount = parseFloat(newExpense.chargeAmount || 0);
-                  if (actualLogAmount > selectedCard.remaining) actualLogAmount = selectedCard.remaining;
+                  
+                  // Don't force split on monthly cards since they refill
+                  if (actualLogAmount > selectedCard.remaining && selectedCard.ruleType !== 'monthly') {
+                      actualLogAmount = selectedCard.remaining;
+                  }
+                  
                   if (actualLogAmount < reqAmount && actualLogAmount > 0) isSplitNeeded = true;
                 }
                 return <button type="submit" className={`w-full text-white font-bold py-4 rounded-xl transition-all shadow-lg hover:shadow-xl active:scale-[0.98] text-lg ${isSplitNeeded ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{isSplitNeeded ? `Split Payment (Log ₪${actualLogAmount} & Continue)` : (editingExpenseId ? 'Update Purchase' : 'Confirm Plan')}</button>;
