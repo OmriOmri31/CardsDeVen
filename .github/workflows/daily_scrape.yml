@@ -23,7 +23,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install playwright firebase-admin
+          pip install playwright firebase-admin playwright-stealth
           playwright install chromium
 
       - name: Run Scraper
