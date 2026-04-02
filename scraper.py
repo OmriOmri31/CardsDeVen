@@ -6,8 +6,15 @@ from playwright_stealth import Stealth
 import firebase_admin
 from firebase_admin import credentials, db
 
-# Temporary local path for testing
-cred = credentials.Certificate(r"C:\Users\iamam\OneDrive\Desktop\cardsdeven-firebase-adminsdk-fbsvc-dac77be72f.json") 
+# 1. Initialize Firebase using the GitHub Secret (JSON string)
+firebase_creds_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+if not firebase_creds_json:
+    raise ValueError("FIREBASE_SERVICE_ACCOUNT environment variable is missing.")
+
+# Parse the JSON string from the environment variable
+creds_dict = json.loads(firebase_creds_json)
+cred = credentials.Certificate(creds_dict)
+
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://cardsdeven-default-rtdb.firebaseio.com/'
 })
@@ -21,28 +28,25 @@ def get_new_otp(start_time, timeout_seconds=120):
     while time.time() < end_time:
         data = otp_ref.get()
         if data and 'timestamp' in data and 'code' in data:
-            # MacroDroid saves timestamp in Unix seconds
             if int(data['timestamp']) > start_time:
                 return data['code']
-        time.sleep(5) # Wait 5 seconds before checking again
+        time.sleep(5)
     raise Exception("Timeout waiting for OTP from MacroDroid")
 
 def run_scraper():
-    # Record when script starts so we only grab NEW text messages
     start_time = int(time.time())
     
     with sync_playwright() as p:
-        # headless=True keeps it invisible
+        # Keep headless=True for GitHub Actions
         browser = p.chromium.launch(headless=True)
         
-        # Create a context that perfectly mimics a real Windows desktop browser
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080}
         )
         page = context.new_page()
         
-        # INJECT STEALTH (v2.0+ Syntax): This patches the headless browser fingerprint
+        # Apply Stealth to bypass anti-bot
         stealth = Stealth()
         stealth.apply_stealth_sync(page)
         
@@ -50,9 +54,13 @@ def run_scraper():
         print("Navigating to Behatsdaa...")
         page.goto("https://www.behatsdaa.org.il/login")
         
-        # Enter ID
+        # Enter ID from GitHub Secrets
         print("Entering ID...")
-        page.fill("#loginIdWithShortCode", "209056860") 
+        behatsdaa_id = os.environ.get("BEHATSDAA_ID")
+        if not behatsdaa_id:
+            raise ValueError("BEHATSDAA_ID secret is missing.")
+            
+        page.fill("#loginIdWithShortCode", behatsdaa_id) 
         
         # Click to trigger SMS
         print("Requesting SMS...")
@@ -63,7 +71,7 @@ def run_scraper():
         # 3. Poll Firebase for the MacroDroid code
         print("Polling Firebase for OTP...")
         otp_code = get_new_otp(start_time)
-        print(f"Received OTP ({otp_code})! Entering into browser...")
+        print(f"Received OTP! Entering into browser...")
         
         # 4. Enter OTP
         page.fill("#shortCode", otp_code) 
@@ -71,25 +79,20 @@ def run_scraper():
         # 5. Final Submit
         page.click("button:has-text('התחברות')") 
         
-        # Wait for the login to complete and dashboard to load
+        # Wait for the login to complete
         print("Waiting for login to complete...")
         page.wait_for_load_state("networkidle") 
         print("Successfully logged in!")
         
-        # 6. SCRAPING LOGIC
-        # You will need to inspect the dashboard page and write the locators 
-        # to grab the actual Hebrew text/prices of the sales you are eligible for.
-        # Example placeholder:
-        # card_titles = page.locator(".some-card-title-class").all_inner_texts()
-        
+        # 6. SCRAPING LOGIC (Placeholder for now)
         scraped_data = {
             "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
             "discounts": [
-                {"name": "Mock Discount", "value": "20%"} # Replace with real scraped data
+                {"name": "Success!", "value": "Automation verified"}
             ]
         }
         
-        # 7. Save to JSON (Ensuring Hebrew characters don't break)
+        # 7. Save to JSON
         os.makedirs("public", exist_ok=True)
         with open("public/data.json", "w", encoding="utf-8") as f:
             json.dump(scraped_data, f, ensure_ascii=False, indent=4)
