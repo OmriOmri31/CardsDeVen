@@ -1,6 +1,8 @@
-const { GoogleGenerativeAI } = require('@google/generativeai');
+const { GoogleGenAI } = require('@google/genai');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize the new 2026 SDK
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 // Cosine Similarity Math Formula
 function cosineSimilarity(vecA, vecB) {
   let dotProduct = 0;
@@ -24,7 +26,6 @@ exports.handler = async function (event, context) {
     const { query, history, systemInstruction, userClubs, walletString, merchantNames } = JSON.parse(event.body);
 
     // 1. Fetch the giant JSON file containing the math vectors from your live site
-    // (We do this dynamically so it's always the freshest scrape)
     const host = event.headers.host;
     const protocol = host.includes('localhost') ? 'http' : 'https';
     const dataUrl = `${protocol}://${host}/data.json`;
@@ -45,10 +46,12 @@ exports.handler = async function (event, context) {
     let topDealsText = "No specific deals found.";
 
     if (eligibleDeals.length > 0) {
-      // 3. Turn the user's question into a math vector
-      const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-      const embeddingResult = await embeddingModel.embedContent(query);
-      const userVector = embeddingResult.embedding.values;
+      // 3. Turn the user's question into a math vector using the NEW SDK
+      const embeddingResult = await ai.models.embedContent({
+        model: 'gemini-embedding-001',
+        contents: query,
+      });
+      const userVector = embeddingResult.embeddings[0].values;
 
       // 4. Calculate similarity and grab the Top 40 closest matches
       const scoredDeals = eligibleDeals.map(deal => {
@@ -71,18 +74,30 @@ USER'S DATA:
 - Wallet Cards: ${walletString || 'Empty'}
 - Supported Merchants: ${merchantNames || 'None'}`;
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      systemInstruction: finalSystemInstruction
+    // 6. Map the chat history to the new SDK format
+    const contents = (history || []).map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.text }]
+    }));
+    
+    // Add the user's current message to the end of the history array
+    contents.push({
+      role: 'user',
+      parts: [{ text: query }]
     });
 
-    const chat = model.startChat({ history: history || [] });
-    const result = await chat.sendMessage(query);
-    const responseText = result.response.text();
+    // 7. Generate the response
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+      config: {
+        systemInstruction: finalSystemInstruction
+      }
+    });
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ result: responseText })
+      body: JSON.stringify({ result: response.text })
     };
 
   } catch (error) {
