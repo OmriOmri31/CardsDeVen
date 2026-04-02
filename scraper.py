@@ -75,10 +75,19 @@ def get_new_otp(start_time, timeout_seconds=120):
 def push_to_github():
     print("--- Git Automation Started ---")
     try:
+        # 1. Add and commit the new data locally
         subprocess.run(["git", "add", "public/data.json"], check=True)
         commit_msg = f"auto-scrape: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+        
+        # 2. Sync with GitHub (Download any cloud changes first so we don't overwrite/conflict)
+        print("Pulling latest changes from GitHub...")
+        subprocess.run(["git", "pull", "--rebase"], check=True)
+        
+        # 3. Push the combined result back to the cloud
+        print("Pushing to GitHub...")
         subprocess.run(["git", "push"], check=True)
+        
         print("Successfully pushed to GitHub!")
     except subprocess.CalledProcessError as e:
         print(f"Git Update Skipped: No changes to push or network issue. ({e})")
