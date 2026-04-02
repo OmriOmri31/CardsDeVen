@@ -1,10 +1,6 @@
 {
-    "last_updated": "2026-04-02 04:00:09",
-    "status": "Online",
-    "discounts": [
-        {
-            "name": "Automation Status",
-            "value": "Working Perfectly"
-        }
-    ]
+    "last_updated": "2026-04-02 13:06:19",
+    "data": {
+        "כללי": {}
+    }
 }
