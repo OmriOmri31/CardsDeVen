@@ -7,8 +7,10 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 import firebase_admin
 from firebase_admin import credentials, db
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
+
 
 # ==========================================
 # 1. CONFIGURATION & INITIALIZATION
