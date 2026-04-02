@@ -672,6 +672,7 @@ export default function App() {
     aiRequestInFlightRef.current = true;
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
+    
     const userText = aiInput.trim();
     const preferredLanguage = detectInputLanguage(userText);
     const newMessages = [...aiMessages, { role: 'user', text: userText }];
@@ -679,49 +680,17 @@ export default function App() {
     setAiInput('');
     setIsAiTyping(true);
 
-    const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
-    
-    // 1. Extract important words from user's chat
-    const queryWords = userText.toLowerCase().split(' ').filter(w => w.length > 2);
-    
-    // 2. Filter the massive list of deals to only those that match the user's request
-    let filteredDeals = allDiscountsData.filter((d) => userClubs.includes(d.c));
-    if (queryWords.length > 0) {
-      filteredDeals = filteredDeals.filter(d => {
-        const cat = dynamicMerchants[d.m]?.cat || '';
-        const aliases = CATEGORY_ALIASES[cat]?.join(' ') || '';
-        const searchStr = `${d.m} ${d.d} ${cat} ${aliases}`.toLowerCase();
-        return queryWords.some(w => searchStr.includes(w));
-      });
-    }
-
-    // 3. Send up to 150 highly relevant deals instead of 20 random ones
-    const activeDiscounts = filteredDeals.slice(0, 150).map((d) => `${d.m} - ${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
-    
-    // 4. Remove the slice limit on merchant names so the AI knows ALL venues
     const merchantNames = Object.keys(dynamicMerchants).map((k) => k.split('(')[0].trim()).join(', ');
     
     const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
 Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
-
-USER'S DATA:
-- Clubs: ${activeClubsList || 'None'}
-- Wallet Cards (with balances): ${walletString || 'Empty'}
-- Available Discounts: ${activeDiscounts || 'None'}
-- Supported Merchants: ${merchantNames}
 
 ### TONE & PERSONALITY:
 - MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only. Do not mix languages unless user asks.
 - Reply natively in the EXACT language the user used.
 - Be highly energetic, direct, and slightly humorous (Israeli style). Use emojis appropriately (e.g., "מישהו פה מתכנן חגיגה 🍕", "ברור, בוא נארגן לך הופעה פצצה לחתונה 👔").
 - DO NOT be generic. Do not just list stores. Be a decisive, mathematical advisor.
-
-### DECISION LOGIC:
-1. INTENT: What does the user want to buy?
-2. MATCH: Which merchants from the 'Supported Merchants' list sell this?
-3. CALCULATE THE BEST DEAL: Check 'Available Discounts' for those merchants. Then, check 'Wallet Cards' to see which card actually has enough money to pay for it.
-4. RECOMMEND: You MUST choose the absolute best combination of [Merchant] + [Discount] + [Specific Card to pay with].
 
 ### STRICT RESPONSE FORMAT:
 Your response must ALWAYS follow this exact structure (use bold text for emphasis, but DO NOT use Markdown headers like # or ## to keep the chat UI clean):
@@ -735,11 +704,30 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
 
 ⚠️ **שים לב לתקציב (Budget Note - ONLY IF RELEVANT):** If the estimated cost of the item is likely higher than their available card balance, explicitly tell them they will need to do a "Split Payment" (לפצל תשלום) at the register with a regular credit card.
 
-🎯 **שאלה למיקוד (Call to Action):** End with one short question to narrow down their needs (e.g., "מחפש בגדי גברים או נשים?", "בא לך משלוח או לשבת במסעדה?").`;
+🎯 **שאלה למיקוד (Call to Action):** End with one short question to narrow down their needs.`;
 
     try {
-      const responseText = await fetchGeminiAIResponse(userText, aiMessages, systemInstruction, abortControllerRef.current.signal);
-      if (responseText) setAiMessages([...newMessages, { role: 'model', text: responseText }]);
+      // We pass the raw data so the backend can search it using Vectors
+      const payload = {
+         query: userText, 
+         history: aiMessages, 
+         systemInstruction,
+         userClubs: userClubs,
+         walletString: walletString,
+         merchantNames: merchantNames
+      };
+
+      const response = await fetch('/.netlify/functions/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: abortControllerRef.current.signal
+      });
+
+      if (!response.ok) throw new Error(`Status ${response.status}`);
+      const data = await response.json();
+      
+      if (data.result) setAiMessages([...newMessages, { role: 'model', text: data.result }]);
     } catch (err) {
       if (err.name !== 'AbortError') setAiMessages([...newMessages, { role: 'model', text: `אופס, משהו השתבש בחיבור שלי. 😅\n\n${err.message}` }]);
     } finally {
