@@ -47,7 +47,7 @@ exports.handler = async function (event, context) {
 
     if (eligibleDeals.length > 0) {
       // 3. Turn the user's question into a math vector
-      const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+      const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
       const embeddingResult = await embeddingModel.embedContent(query);
       const userVector = embeddingResult.embedding.values;
 
