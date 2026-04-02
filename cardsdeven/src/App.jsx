@@ -371,28 +371,33 @@ export default function App() {
         const flattenedDeals = [];
         const updatedMerchants = { ...INITIAL_KNOWN_MERCHANTS };
 
-        // We iterate through the nested structure and map it out flat
+        // 1. Iterate through Master Categories
         Object.entries(json.data || {}).forEach(([masterCategory, venues]) => {
           const mappedAppCategory = HEBREW_TO_APP_CATEGORIES[masterCategory] || "Other";
 
-          Object.entries(venues).forEach(([venueName, shows]) => {
-            // Inject the scraped venue into our known merchants so the UI recognizes it
+          // 2. Iterate through Venues
+          Object.entries(venues).forEach(([venueName, showsObject]) => {
+            
+            // Inject the scraped venue into our known merchants
             if (!updatedMerchants[venueName]) {
               updatedMerchants[venueName] = {
                 cat: mappedAppCategory,
-                networks: [], // Default empty network unless mapped manually
+                networks: [], 
                 aliases: [venueName.toLowerCase()]
               };
             }
 
-            // Create flat deals 
-            shows.forEach(show => {
-              flattenedDeals.push({
-                m: venueName,
-                c: 'BEHATSDAA',
-                d: `${show.title} (${show.price})`
+            // 3. Iterate through the Show Names object, THEN the array of deals
+            Object.values(showsObject).forEach((showArray) => {
+              showArray.forEach(show => {
+                flattenedDeals.push({
+                  m: venueName,
+                  c: 'BEHATSDAA',
+                  d: `${show.title} (${show.price})`
+                });
               });
             });
+            
           });
         });
 
