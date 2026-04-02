@@ -680,9 +680,26 @@ export default function App() {
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
     
-    const activeDiscounts = allDiscountsData.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
+    // 1. Extract important words from user's chat
+    const queryWords = userText.toLowerCase().split(' ').filter(w => w.length > 2);
+    
+    // 2. Filter the massive list of deals to only those that match the user's request
+    let filteredDeals = allDiscountsData.filter((d) => userClubs.includes(d.c));
+    if (queryWords.length > 0) {
+      filteredDeals = filteredDeals.filter(d => {
+        const cat = dynamicMerchants[d.m]?.cat || '';
+        const aliases = CATEGORY_ALIASES[cat]?.join(' ') || '';
+        const searchStr = `${d.m} ${d.d} ${cat} ${aliases}`.toLowerCase();
+        return queryWords.some(w => searchStr.includes(w));
+      });
+    }
+
+    // 3. Send up to 150 highly relevant deals instead of 20 random ones
+    const activeDiscounts = filteredDeals.slice(0, 150).map((d) => `${d.m} - ${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
-    const merchantNames = Object.keys(dynamicMerchants).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
+    
+    // 4. Remove the slice limit on merchant names so the AI knows ALL venues
+    const merchantNames = Object.keys(dynamicMerchants).map((k) => k.split('(')[0].trim()).join(', ');ntNames = Object.keys(dynamicMerchants).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
     
     const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
 Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
