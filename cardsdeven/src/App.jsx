@@ -25,6 +25,17 @@ const CATEGORY_ICONS = {
 };
 const CATEGORIES = Object.keys(CATEGORY_ICONS);
 
+// Map the Hebrew categories from your scraper to the App's English categories
+const HEBREW_TO_APP_CATEGORIES = {
+  "בידור וסטנד אפ": "Cinemas", 
+  "מופעים ומוזיקה": "Cinemas",
+  "אטרקציות": "Kids & Baby",
+  "ספא ונופש": "Spas & Wellness",
+  "צרכנות": "Online Retail & Delivery",
+  "קולינריה": "Food Chains & Restaurants",
+  "כללי": "Other"
+};
+
 // --- DOMAIN KNOWLEDGE: CATEGORY SEARCH ALIASES ---
 const CATEGORY_ALIASES = {
   "Supermarkets & Groceries": ["supermarket", "grocery", "groceries", "סופר", "סופרמרקט", "מכולת", "מזון"],
@@ -33,7 +44,7 @@ const CATEGORY_ALIASES = {
   "Hotels & Lodging": ["hotel", "lodging", "vacation", "resort", "מלון", "מלונות", "נופש", "לינה", "חופשה"],
   "Spas & Wellness": ["spa", "wellness", "massage", "ספא", "עיסוי", "טיפולים"],
   "Electronics": ["electronics", "computers", "mobile", "phone", "חשמל", "אלקטרוניקה", "מחשבים", "מוצרי חשמל", "סלולר", "טלפון"],
-  "Cinemas": ["cinema", "movie", "movies", "film", "קולנוע", "סרט", "סרטים", "סינמה"],
+  "Cinemas": ["cinema", "movie", "movies", "film", "קולנוע", "סרט", "סרטים", "סינמה", "הופעה", "סטנדאפ"],
   "Food Chains & Restaurants": ["food", "restaurant", "dining", "cafe", "burger", "pizza", "אוכל", "מסעדה", "מסעדות", "בית קפה", "בתי קפה", "פיצה", "המבורגר", "סושי"],
   "Online Retail & Delivery": ["online", "delivery", "ecommerce", "אונליין", "משלוח", "משלוחים", "אינטרנט", "קניות ברשת"],
   "Pharmacy & Health": ["pharmacy", "health", "makeup", "פארם", "בית מרקחת", "בריאות", "תרופות", "איפור", "קוסמטיקה", "פארמה"],
@@ -64,21 +75,8 @@ const CLUBS = {
   DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', color: 'bg-slate-900' }
 };
 
-const DISCOUNTS_DATA = [
-  { m: "Domino's Pizza (דומינוס פיצה)", c: "BEHATSDAA", d: "משפחתית באיסוף מ-39 ₪, שובר 100 ב-65 ₪, ארוחות מ-65 ₪" },
-  { m: "Pizza Hut (פיצה האט)", c: "BEHATSDAA", d: "אישית מ-20 ₪, משפחתית מ-54 ₪, 2 משפחתיות מ-89 ₪" },
-  { m: "Papa John's (פאפא ג'ונס)", c: "BEHATSDAA", d: "מגשי פיצה החל מ-38 ₪" },
-  { m: "Pizza Shemesh (פיצה שמש)", c: "BEHATSDAA", d: "מגשי פיצה החל מ-39 ₪" },
-  { m: "Cinema City (סינמה סיטי)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-33 ₪" },
-  { m: "Planet (פלאנט)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-30 ₪" },
-  { m: "HOT Cinema (הוט סינמה)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-32 ₪" },
-  { m: "Movieland (מובילנד)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-28 ₪" },
-  { m: "Mishloha (משלוחה)", c: "BEHATSDAA", d: "שובר 100 ₪ לניצול באפליקציה ב-70 ₪" },
-  { m: "FOX (פוקס)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
-  { m: "FOX Home (פוקס הום)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
-  { m: "Mega Sport (מגה ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
-  { m: "Aluf Sport (אלוף ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
-  { m: "Holmes Place (הולמס פלייס)", c: "BEHATSDAA", d: "כרטיסיית 10 כניסות מ-432 ₪ / מנוי חצי שנתי מ-1,012 ₪" },
+// Hardcoded deals minus the Behatsdaa ones (since we pull those live now)
+const HARDCODED_DISCOUNTS = [
   { m: "Domino's Pizza (דומינוס פיצה)", c: "PAIS_PLUS", d: "תו קנייה 150 ב-99 ש\"ח / 100 ב-69 ש\"ח" },
   { m: "Pizza Hut (פיצה האט)", c: "PAIS_PLUS", d: "2 פיצות + תוספת + מקלות שוקולד ב-120 ש\"ח" },
   { m: "Pizza Shemesh (פיצה שמש)", c: "PAIS_PLUS", d: "2 משפחתיות + תוספות + שתיה ב-75 ש\"ח" },
@@ -116,7 +114,7 @@ const DISCOUNTS_DATA = [
   { m: "Sunglass Hut (סאנגלס האט)", c: "DREAMCARD", d: "10% הנחה נוספת על מבצעי החנות" }
 ];
 
-const KNOWN_MERCHANTS = {
+const INITIAL_KNOWN_MERCHANTS = {
   "Zara (זארה)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["zara", "זארה"], logo: "zara.png" },
   "Pull and Bear (פול אנד בר)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["pull", "bear", "פול", "בר"], logo: "pull_and_bear.png" },
   "Bershka (ברשקה)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["bershka", "ברשקה"] },
@@ -251,108 +249,9 @@ const KNOWN_MERCHANTS = {
   "Kravitz (קרביץ)": { cat: "Other", networks: ['TH', 'GT'], aliases: ["kravitz", "קרביץ"] },
 };
 
-const getLogoPath = (merchantString) => {
-  if (!merchantString) return '';
-  const merchData = KNOWN_MERCHANTS[merchantString];
-  if (merchData && merchData.logo) return `/assets/logos/${merchData.logo}`;
-  const englishPart = merchantString.split('(')[0].trim().toLowerCase();
-  const filename = englishPart.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return `/assets/logos/${filename}.png`;
-};
-
 const getDaysUntilExpiry = (dateString) => {
   if (!dateString) return Infinity;
   return Math.ceil((new Date(dateString) - new Date()) / (1000 * 60 * 60 * 24));
-};
-
-const checkCompatibility = (card, category, merchantName) => {
-  const pId = card.programId || 'CUSTOM';
-  const merchData = KNOWN_MERCHANTS[merchantName];
-
-  if (pId === 'HG') {
-    if (['Fuel & Transportation', 'Pharmacy & Health'].includes(category)) return { allowed: false, reason: "Blocked category" };
-    return { allowed: true, reason: "Allowed (Mastercard Network)" };
-  }
-  if (pId === 'FLEX') return { allowed: true, reason: "Usually allowed (Check policy)" };
-  if (pId === 'FTR') {
-    if (["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"].includes(category)) return { allowed: true, reason: "MCC Allowed" };
-    return { allowed: false, reason: "MCC Restricted" };
-  }
-  if (pId === 'FTR_VAC') {
-    if (category === "Hotels & Lodging") return { allowed: true, reason: "Lodging Allowed" };
-    return { allowed: false, reason: "Lodging Only" };
-  }
-  if (pId === 'CB') {
-    if (category === "Food Chains & Restaurants") return { allowed: true, reason: "Cibus Food Network" };
-    if (merchData && merchData.networks.includes('CB')) return { allowed: true, reason: "Explicit Partner" };
-    return { allowed: false, reason: "Not in partner network" };
-  }
-  if (['BM', 'GT', 'TH', 'TP', 'DC'].includes(pId)) {
-    if (!merchantName) return { allowed: false, reason: "Specific merchant required" };
-    if (merchData && merchData.networks.includes(pId)) return { allowed: true, reason: `Explicit Partner` };
-    return { allowed: false, reason: "Merchant not in network" };
-  }
-  if (pId === 'CUSTOM') {
-    if ((card.categories || []).includes(category)) return { allowed: true, reason: "Allowed Category" };
-    return { allowed: false, reason: "Category not assigned" };
-  }
-  return { allowed: false, reason: "Unknown compatibility" };
-};
-
-const getDerivedCategories = (card) => {
-  const pId = card.programId || 'CUSTOM';
-  if (pId === 'CUSTOM') return card.categories || [];
-  if (pId === 'HG' || pId === 'FLEX') return CATEGORIES.filter(c => !['Fuel & Transportation', 'Pharmacy & Health'].includes(c));
-  if (pId === 'FTR') return ["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"];
-  if (pId === 'FTR_VAC') return ["Hotels & Lodging"];
-
-  const derived = new Set();
-  if (pId === 'CB') derived.add("Food Chains & Restaurants");
-  Object.values(KNOWN_MERCHANTS).forEach((m) => {
-    if (m.networks.includes(pId)) derived.add(m.cat);
-  });
-  return Array.from(derived);
-};
-
-const getSmartMatches = (query, maxResults = 15) => {
-  if (!query) return [];
-  const q = query.toLowerCase().trim();
-
-  return Object.entries(KNOWN_MERCHANTS)
-    .filter(([name, data]) => {
-      const cleanName = name.toLowerCase().replace(/[()]/g, '');
-      const matchName = cleanName.includes(q) || cleanName.split(/\s+/).some((w) => w.startsWith(q));
-
-      const matchAlias = (data.aliases || []).some((alias) => {
-        const a = alias.toLowerCase().replace(/[()]/g, '');
-        return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
-      });
-
-      const catAliases = CATEGORY_ALIASES[data.cat] || [];
-      const matchCat = catAliases.some((alias) => {
-        const a = alias.toLowerCase();
-        return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
-      }) || data.cat.toLowerCase().includes(q);
-
-      return matchName || matchAlias || matchCat;
-    })
-    .sort(([nameA, dataA], [nameB, dataB]) => {
-      const getScore = (name, data) => {
-        const clean = name.toLowerCase().replace(/[()]/g, '');
-        if (clean === q) return 0;
-        if (clean.startsWith(q)) return 1;
-        if (clean.split(/\s+/).some((w) => w.startsWith(q))) return 2;
-        if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '') === q)) return 3;
-        if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '').startsWith(q))) return 4;
-        return 5;
-      };
-
-      const scoreA = getScore(nameA, dataA);
-      const scoreB = getScore(nameB, dataB);
-
-      if (scoreA !== scoreB) return scoreA - scoreB;
-      return nameA.localeCompare(nameB);
-    }).slice(0, maxResults);
 };
 
 const fetchGeminiAIResponse = async (query, history, systemInstruction, signal) => {
@@ -424,20 +323,6 @@ const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
-  const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
-  return (
-    <div className={`relative flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0 ${className} overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700`}>
-      <img
-        src={getLogoPath(merchantName)}
-        alt={merchantName}
-        className="w-full h-full object-cover"
-        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-      />
-      <span className="absolute text-sm" style={{ display: 'none' }}>{fallbackEmoji}</span>
-    </div>
-  );
-};
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -450,6 +335,11 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // --- NEW DATA PIPELINE STATES ---
+  const [liveDeals, setLiveDeals] = useState([]);
+  const [dynamicMerchants, setDynamicMerchants] = useState(INITIAL_KNOWN_MERCHANTS);
+
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
@@ -469,6 +359,174 @@ export default function App() {
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
   const [clubSearch, setClubSearch] = useState('');
+
+  // --- FETCH SCRAPED DATA ON LOAD ---
+  useEffect(() => {
+    const fetchLiveDeals = async () => {
+      try {
+        const response = await fetch('/data.json');
+        if (!response.ok) return;
+        const json = await response.json();
+
+        const flattenedDeals = [];
+        const updatedMerchants = { ...INITIAL_KNOWN_MERCHANTS };
+
+        // We iterate through the nested structure and map it out flat
+        Object.entries(json.data || {}).forEach(([masterCategory, venues]) => {
+          const mappedAppCategory = HEBREW_TO_APP_CATEGORIES[masterCategory] || "Other";
+
+          Object.entries(venues).forEach(([venueName, shows]) => {
+            // Inject the scraped venue into our known merchants so the UI recognizes it
+            if (!updatedMerchants[venueName]) {
+              updatedMerchants[venueName] = {
+                cat: mappedAppCategory,
+                networks: [], // Default empty network unless mapped manually
+                aliases: [venueName.toLowerCase()]
+              };
+            }
+
+            // Create flat deals 
+            shows.forEach(show => {
+              flattenedDeals.push({
+                m: venueName,
+                c: 'BEHATSDAA',
+                d: `${show.title} (${show.price})`
+              });
+            });
+          });
+        });
+
+        setLiveDeals(flattenedDeals);
+        setDynamicMerchants(updatedMerchants);
+      } catch (error) {
+        console.error("Failed to load live deals:", error);
+      }
+    };
+
+    fetchLiveDeals();
+  }, []);
+
+  // --- COMBINE HARDCODED WITH SCRAPED ---
+  const allDiscountsData = useMemo(() => {
+    return [...HARDCODED_DISCOUNTS, ...liveDeals];
+  }, [liveDeals]);
+
+
+  // --- HELPER FUNCTIONS MOVED INSIDE COMPONENT TO ACCESS DYNAMIC MERCHANTS ---
+  const getLogoPath = (merchantString) => {
+    if (!merchantString) return '';
+    const merchData = dynamicMerchants[merchantString];
+    if (merchData && merchData.logo) return `/assets/logos/${merchData.logo}`;
+    const englishPart = merchantString.split('(')[0].trim().toLowerCase();
+    const filename = englishPart.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return `/assets/logos/${filename}.png`;
+  };
+
+  const checkCompatibility = (card, category, merchantName) => {
+    const pId = card.programId || 'CUSTOM';
+    const merchData = dynamicMerchants[merchantName];
+
+    if (pId === 'HG') {
+      if (['Fuel & Transportation', 'Pharmacy & Health'].includes(category)) return { allowed: false, reason: "Blocked category" };
+      return { allowed: true, reason: "Allowed (Mastercard Network)" };
+    }
+    if (pId === 'FLEX') return { allowed: true, reason: "Usually allowed (Check policy)" };
+    if (pId === 'FTR') {
+      if (["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"].includes(category)) return { allowed: true, reason: "MCC Allowed" };
+      return { allowed: false, reason: "MCC Restricted" };
+    }
+    if (pId === 'FTR_VAC') {
+      if (category === "Hotels & Lodging") return { allowed: true, reason: "Lodging Allowed" };
+      return { allowed: false, reason: "Lodging Only" };
+    }
+    if (pId === 'CB') {
+      if (category === "Food Chains & Restaurants") return { allowed: true, reason: "Cibus Food Network" };
+      if (merchData && merchData.networks.includes('CB')) return { allowed: true, reason: "Explicit Partner" };
+      return { allowed: false, reason: "Not in partner network" };
+    }
+    if (['BM', 'GT', 'TH', 'TP', 'DC'].includes(pId)) {
+      if (!merchantName) return { allowed: false, reason: "Specific merchant required" };
+      if (merchData && merchData.networks.includes(pId)) return { allowed: true, reason: `Explicit Partner` };
+      return { allowed: false, reason: "Merchant not in network" };
+    }
+    if (pId === 'CUSTOM') {
+      if ((card.categories || []).includes(category)) return { allowed: true, reason: "Allowed Category" };
+      return { allowed: false, reason: "Category not assigned" };
+    }
+    return { allowed: false, reason: "Unknown compatibility" };
+  };
+
+  const getDerivedCategories = (card) => {
+    const pId = card.programId || 'CUSTOM';
+    if (pId === 'CUSTOM') return card.categories || [];
+    if (pId === 'HG' || pId === 'FLEX') return CATEGORIES.filter(c => !['Fuel & Transportation', 'Pharmacy & Health'].includes(c));
+    if (pId === 'FTR') return ["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"];
+    if (pId === 'FTR_VAC') return ["Hotels & Lodging"];
+
+    const derived = new Set();
+    if (pId === 'CB') derived.add("Food Chains & Restaurants");
+    Object.values(dynamicMerchants).forEach((m) => {
+      if (m.networks.includes(pId)) derived.add(m.cat);
+    });
+    return Array.from(derived);
+  };
+
+  const getSmartMatches = (query, maxResults = 15) => {
+    if (!query) return [];
+    const q = query.toLowerCase().trim();
+
+    return Object.entries(dynamicMerchants)
+      .filter(([name, data]) => {
+        const cleanName = name.toLowerCase().replace(/[()]/g, '');
+        const matchName = cleanName.includes(q) || cleanName.split(/\s+/).some((w) => w.startsWith(q));
+
+        const matchAlias = (data.aliases || []).some((alias) => {
+          const a = alias.toLowerCase().replace(/[()]/g, '');
+          return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
+        });
+
+        const catAliases = CATEGORY_ALIASES[data.cat] || [];
+        const matchCat = catAliases.some((alias) => {
+          const a = alias.toLowerCase();
+          return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
+        }) || data.cat.toLowerCase().includes(q);
+
+        return matchName || matchAlias || matchCat;
+      })
+      .sort(([nameA, dataA], [nameB, dataB]) => {
+        const getScore = (name, data) => {
+          const clean = name.toLowerCase().replace(/[()]/g, '');
+          if (clean === q) return 0;
+          if (clean.startsWith(q)) return 1;
+          if (clean.split(/\s+/).some((w) => w.startsWith(q))) return 2;
+          if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '') === q)) return 3;
+          if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '').startsWith(q))) return 4;
+          return 5;
+        };
+
+        const scoreA = getScore(nameA, dataA);
+        const scoreB = getScore(nameB, dataB);
+
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        return nameA.localeCompare(nameB);
+      }).slice(0, maxResults);
+  };
+
+  const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
+    const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
+    return (
+      <div className={`relative flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0 ${className} overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700`}>
+        <img
+          src={getLogoPath(merchantName)}
+          alt={merchantName}
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+        />
+        <span className="absolute text-sm" style={{ display: 'none' }}>{fallbackEmoji}</span>
+      </div>
+    );
+  };
+
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -541,7 +599,7 @@ export default function App() {
     const spent = expenses.filter((e) => e.cardId === card.id).reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const derivedCats = getDerivedCategories(card);
     return { ...card, spent, remaining: parseFloat(card.balance) - spent, derivedCats };
-  }), [cards, expenses]);
+  }), [cards, expenses, dynamicMerchants]);
 
   const sortedCardBalances = useMemo(() => [...cardBalances].sort((a, b) => {
     const aDays = a.ruleType === 'expires' ? getDaysUntilExpiry(a.expiryDate) : Infinity;
@@ -588,9 +646,12 @@ export default function App() {
     setAiInput('');
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
-    const activeDiscounts = DISCOUNTS_DATA.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
+    
+    // Check against all live deals instead of hardcoded
+    const activeDiscounts = allDiscountsData.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
-    const merchantNames = Object.keys(KNOWN_MERCHANTS).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
+    const merchantNames = Object.keys(dynamicMerchants).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
+    
     const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
 Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
 
@@ -927,7 +988,7 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
               <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Merchant Search</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Find out exactly which cards & discounts to use at the checkout counter.</p></div>
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[2rem] p-6 sm:p-8 shadow-xl text-white">
                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Search size={24} /> Where are you paying?</h3>
-                <input type="text" value={insightSearch} onChange={(e) => setInsightSearch(e.target.value)} placeholder="e.g. Zara, Pizza, Cinema, ASOS..." className="w-full pl-5 pr-12 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/60 focus:ring-4 focus:ring-white/30 outline-none font-medium text-lg transition-all" />
+                <input type="text" value={insightSearch} onChange={(e) => setInsightSearch(e.target.value)} placeholder="e.g. Zara, Pizza, Cinema, COMY..." className="w-full pl-5 pr-12 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/60 focus:ring-4 focus:ring-white/30 outline-none font-medium text-lg transition-all" />
                 {insightSearch && (
                   <div className="mt-6 space-y-4">
                     {(() => {
@@ -935,7 +996,8 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                       if (matches.length === 0) return <div className="text-white/80 font-medium bg-white/10 p-4 rounded-2xl border border-white/20">Merchant not found in official database. Generic category rules will apply.</div>;
                       return matches.map(([searchMatch, mData]) => {
                         const acceptedCards = sortedCardBalances.filter((c) => checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
-                        const merchantDeals = DISCOUNTS_DATA.filter((d) => d.m === searchMatch && userClubs.includes(d.c));
+                        // Check against the combined data (Hardcoded + Live Scraped)
+                        const merchantDeals = allDiscountsData.filter((d) => d.m === searchMatch && userClubs.includes(d.c));
                         return (
                           <div key={searchMatch} className="animate-in slide-in-from-bottom-2 fade-in bg-white/10 p-5 rounded-2xl border border-white/20 shadow-md">
                             <div className="flex items-center gap-3 mb-4"><MerchantIcon merchantName={searchMatch} category={mData.cat} className="w-10 h-10 rounded-full" /><div><div className="text-base sm:text-lg font-bold text-white leading-tight">{searchMatch}</div><div className="text-[10px] sm:text-xs uppercase tracking-widest text-blue-200 mt-0.5">{CATEGORY_ICONS[mData.cat]} {mData.cat}</div></div></div>
@@ -984,23 +1046,23 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
               </div>
               <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                  <div className="relative max-w-md"><Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} /><input type="text" value={clubSearch} onChange={(e) => setClubSearch(e.target.value)} placeholder="Search discounts (e.g. Pizza, FOX)..." className="w-full pl-10 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" /></div>
+                  <div className="relative max-w-md"><Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} /><input type="text" value={clubSearch} onChange={(e) => setClubSearch(e.target.value)} placeholder="Search discounts (e.g. Pizza, FOX, COMY)..." className="w-full pl-10 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" /></div>
                 </div>
                 <div className="p-6">
                   {userClubs.length === 0 ? (
                     <div className="text-center p-8"><Gift size={48} className="mx-auto mb-4 text-slate-200 dark:text-slate-800" /><p className="text-slate-500 font-medium">Select a club above to see your available deals.</p></div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {DISCOUNTS_DATA.filter((d) => {
+                      {allDiscountsData.filter((d) => {
                         if (!userClubs.includes(d.c)) return false;
                         if (!clubSearch) return true;
                         const qs = clubSearch.toLowerCase();
-                        const cat = KNOWN_MERCHANTS[d.m]?.cat || "";
+                        const cat = dynamicMerchants[d.m]?.cat || "";
                         const catAliases = CATEGORY_ALIASES[cat] || [];
                         return d.m.toLowerCase().includes(qs) || d.d.toLowerCase().includes(qs) || cat.toLowerCase().includes(qs) || catAliases.some((a) => a.includes(qs));
-                      }).map((deal, idx) => (
+                      }).slice(0, 50).map((deal, idx) => ( // Sliced to 50 so React doesn't freeze rendering 4000 rows at once
                         <div key={idx} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                          <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat} className="w-12 h-12 rounded-lg" />
+                          <MerchantIcon merchantName={deal.m} category={dynamicMerchants[deal.m]?.cat} className="w-12 h-12 rounded-lg" />
                           <div><div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">{deal.m.split('(')[0].trim()}<span className={`text-[9px] px-1.5 py-0.5 rounded text-white ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span></div><div className="text-sm font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{deal.d}</div></div>
                         </div>
                       ))}
