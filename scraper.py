@@ -22,13 +22,12 @@ DATABASE_URL = 'https://cardsdeven-default-rtdb.firebaseio.com/'
 
 # Use the API key from your React app for the embeddings
 # Load hidden variables from .env
-load_dotenv()
-
+load_dotenv("cardsdeven/.env")
 # Securely fetch the key
 api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    raise ValueError("GEMINI_API_KEY not found in .env file!")
-genai.configure(api_key=api_key)
+    raise ValueError("GEMINI_API_KEY not found! Make sure .env is in the root folder.")
+client = genai.Client(api_key=api_key)
 
 if not firebase_admin._apps:
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
@@ -181,19 +180,19 @@ def generate_embeddings(nested_data):
         
         print(f"Embedding batch {i} to {i+len(batch)}...")
         try:
-            response = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=texts,
-                task_type="retrieval_document"
+            response = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=texts,
+                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
             )
-            
-            for j, embedding in enumerate(response['embedding']):
+
+            for j, embedding in enumerate(response.embeddings):
                 deal = batch[j]
                 vectorized_deals.append({
                     "m": deal["m"],
                     "c": deal["c"],
                     "d": deal["d"],
-                    "v": embedding # The mathematical vector
+                    "v": embedding.values # The mathematical vector
                 })
         except Exception as e:
             print(f"Failed to embed batch: {e}")
