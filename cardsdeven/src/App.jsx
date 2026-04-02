@@ -363,10 +363,12 @@ export default function App() {
   const [clubSearch, setClubSearch] = useState('');
 
   // --- FETCH SCRAPED DATA ON LOAD ---
+  // --- FETCH SCRAPED DATA ON LOAD ---
   useEffect(() => {
     const fetchLiveDeals = async () => {
       try {
-        const response = await fetch('/data.json');
+        // THE FIX: Add a timestamp "cache-buster" to force the browser to download the freshest file
+        const response = await fetch('/data.json?nocache=' + new Date().getTime());
         if (!response.ok) return;
         const json = await response.json();
 
@@ -383,22 +385,16 @@ export default function App() {
             // 3. Iterate through the Show Names
             Object.entries(showsObject).forEach(([showName, showArray]) => {
               
-              // --- THE SMART PROMOTER ---
-              // If the scraper used a generic word for the venue, we elevate the specific Show Name 
-              // (e.g. "Cinema City") to be the venue name.
               let trueMerchantName = venueName;
               
               const findTrueMerchant = (text) => {
                 if (!text) return null;
-                // Add spaces around the text and remove dashes so we can enforce strict whole-word matching
                 const paddedText = ` ${text.toLowerCase().replace(/[\-\(\)]/g, ' ')} `;
                 
                 for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
-                  // Check if any alias matches perfectly as a whole word
                   if (data.aliases && data.aliases.some(alias => paddedText.includes(` ${alias.toLowerCase()} `))) {
                     return knownName;
                   }
-                  // Also check the main English name (e.g. "zara")
                   const englishName = knownName.split('(')[0].trim().toLowerCase();
                   if (paddedText.includes(` ${englishName} `)) return knownName;
                 }
