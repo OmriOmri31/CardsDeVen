@@ -678,6 +678,7 @@ export default function App() {
     setAiMessages(newMessages);
     setAiInput('');
     setIsAiTyping(true);
+
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
     
     // 1. Extract important words from user's chat
@@ -699,7 +700,7 @@ export default function App() {
     const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
     
     // 4. Remove the slice limit on merchant names so the AI knows ALL venues
-    const merchantNames = Object.keys(dynamicMerchants).map((k) => k.split('(')[0].trim()).join(', ');ntNames = Object.keys(dynamicMerchants).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
+    const merchantNames = Object.keys(dynamicMerchants).map((k) => k.split('(')[0].trim()).join(', ');
     
     const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
 Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
@@ -735,6 +736,7 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
 ⚠️ **שים לב לתקציב (Budget Note - ONLY IF RELEVANT):** If the estimated cost of the item is likely higher than their available card balance, explicitly tell them they will need to do a "Split Payment" (לפצל תשלום) at the register with a regular credit card.
 
 🎯 **שאלה למיקוד (Call to Action):** End with one short question to narrow down their needs (e.g., "מחפש בגדי גברים או נשים?", "בא לך משלוח או לשבת במסעדה?").`;
+
     try {
       const responseText = await fetchGeminiAIResponse(userText, aiMessages, systemInstruction, abortControllerRef.current.signal);
       if (responseText) setAiMessages([...newMessages, { role: 'model', text: responseText }]);
