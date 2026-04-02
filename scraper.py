@@ -2,16 +2,12 @@ import os
 import json
 import time
 from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
 import firebase_admin
 from firebase_admin import credentials, db
 
-# 1. Initialize Firebase using the GitHub Secret
-firebase_creds_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
-if not firebase_creds_json:
-    raise ValueError("FIREBASE_SERVICE_ACCOUNT environment variable is missing.")
-
-creds_dict = json.loads(firebase_creds_json)
-cred = credentials.Certificate(creds_dict)
+# Temporary local path for testing
+cred = credentials.Certificate(r"C:\Users\iamam\OneDrive\Desktop\cardsdeven-firebase-adminsdk-fbsvc-dac77be72f.json") 
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://cardsdeven-default-rtdb.firebaseio.com/'
 })
@@ -36,8 +32,19 @@ def run_scraper():
     start_time = int(time.time())
     
     with sync_playwright() as p:
+        # headless=True keeps it invisible
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        
+        # Create a context that perfectly mimics a real Windows desktop browser
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080}
+        )
+        page = context.new_page()
+        
+        # INJECT STEALTH (v2.0+ Syntax): This patches the headless browser fingerprint
+        stealth = Stealth()
+        stealth.apply_stealth_sync(page)
         
         # 2. Navigate and Login
         print("Navigating to Behatsdaa...")
@@ -45,7 +52,7 @@ def run_scraper():
         
         # Enter ID
         print("Entering ID...")
-        page.fill("#loginIdWithShortCode", os.environ.get("BEHATSDAA_ID")) 
+        page.fill("#loginIdWithShortCode", "209056860") 
         
         # Click to trigger SMS
         print("Requesting SMS...")

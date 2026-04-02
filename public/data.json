@@ -1,0 +1,9 @@
+{
+    "last_updated": "2026-04-02 03:28:59",
+    "discounts": [
+        {
+            "name": "Mock Discount",
+            "value": "20%"
+        }
+    ]
+}
