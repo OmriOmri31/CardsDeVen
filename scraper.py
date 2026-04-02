@@ -261,8 +261,8 @@ def run_scraper(headless_mode=True):
                 "data": all_scraped_data
             }
 
-            os.makedirs("public", exist_ok=True)
-            with open("public/data.json", "w", encoding="utf-8") as f:
+            os.makedirs("cardsdeven/public", exist_ok=True)
+            with open("cardsdeven/public/data.json", "w", encoding="utf-8") as f:
                 json.dump(final_json, f, ensure_ascii=False, indent=4)
             print("\nScraping complete. Data saved to public/data.json.")
 
