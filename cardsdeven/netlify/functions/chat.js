@@ -1,7 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generativeai');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyBjn2oGHj-bT_O213csvNPLoEliTdWbS4M");
-
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Cosine Similarity Math Formula
 function cosineSimilarity(vecA, vecB) {
   let dotProduct = 0;
@@ -47,7 +46,7 @@ exports.handler = async function (event, context) {
 
     if (eligibleDeals.length > 0) {
       // 3. Turn the user's question into a math vector
-      const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
+      const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
       const embeddingResult = await embeddingModel.embedContent(query);
       const userVector = embeddingResult.embedding.values;
 

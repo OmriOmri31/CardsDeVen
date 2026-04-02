@@ -8,6 +8,7 @@ from playwright_stealth import Stealth
 import firebase_admin
 from firebase_admin import credentials, db
 import google.generativeai as genai
+from dotenv import load_dotenv
 
 # ==========================================
 # 1. CONFIGURATION & INITIALIZATION
@@ -18,7 +19,14 @@ BEHATSDAA_ID = "209056860"
 DATABASE_URL = 'https://cardsdeven-default-rtdb.firebaseio.com/'
 
 # Use the API key from your React app for the embeddings
-genai.configure(api_key="AIzaSyD7zizhVjdItYUtV3apUvnuEiHPOhbiHS8")
+# Load hidden variables from .env
+load_dotenv()
+
+# Securely fetch the key
+api_key = os.environ.get("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("GEMINI_API_KEY not found in .env file!")
+genai.configure(api_key=api_key)
 
 if not firebase_admin._apps:
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
