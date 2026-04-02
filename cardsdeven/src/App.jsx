@@ -528,7 +528,12 @@ export default function App() {
           return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
         }) || data.cat.toLowerCase().includes(q);
 
-        return matchName || matchAlias || matchCat;
+        // NEW: Check if the actual deal text contains the search query
+        const hasMatchingDeal = allDiscountsData.some(
+          (deal) => deal.m === name && deal.d.toLowerCase().includes(q)
+        );
+
+        return matchName || matchAlias || matchCat || hasMatchingDeal;
       })
       .sort(([nameA, dataA], [nameB, dataB]) => {
         const getScore = (name, data) => {
@@ -548,7 +553,6 @@ export default function App() {
         return nameA.localeCompare(nameB);
       }).slice(0, maxResults);
   };
-
   const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
     const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
     return (
