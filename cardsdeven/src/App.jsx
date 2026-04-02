@@ -375,62 +375,63 @@ export default function App() {
         const flattenedDeals = [];
         const updatedMerchants = { ...INITIAL_KNOWN_MERCHANTS };
 
-        // 1. Iterate through Master Categories
-        Object.entries(json.data || {}).forEach(([masterCategory, venues]) => {
-          const mappedAppCategory = HEBREW_TO_APP_CATEGORIES[masterCategory] || "Other";
-
-          // 2. Iterate through Venues
-          Object.entries(venues).forEach(([venueName, showsObject]) => {
-            
-            // 3. Iterate through the Show Names
-            Object.entries(showsObject).forEach(([showName, showArray]) => {
+      // 3. Iterate through the Show Names
+      Object.entries(showsObject).forEach(([showName, showArray]) => {
               
-              let trueMerchantName = venueName;
-              
-              const findTrueMerchant = (text) => {
-                if (!text) return null;
-                const paddedText = ` ${text.toLowerCase().replace(/[\-\(\)]/g, ' ')} `;
-                
-                for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
-                  if (data.aliases && data.aliases.some(alias => paddedText.includes(` ${alias.toLowerCase()} `))) {
-                    return knownName;
-                  }
-                  const englishName = knownName.split('(')[0].trim().toLowerCase();
-                  if (paddedText.includes(` ${englishName} `)) return knownName;
-                }
-                return null;
-              };
+        let trueMerchantName = venueName;
+        
+        const findTrueMerchant = (text) => {
+          if (!text) return null;
+          const paddedText = ` ${text.toLowerCase().replace(/[\-\(\)]/g, ' ')} `;
+          
+          for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
+            if (data.aliases && data.aliases.some(alias => paddedText.includes(` ${alias.toLowerCase()} `))) {
+              return knownName;
+            }
+            const englishName = knownName.split('(')[0].trim().toLowerCase();
+            if (paddedText.includes(` ${englishName} `)) return knownName;
+          }
+          return null;
+        };
 
-              const genericVenues = ["כללי / מיקומים שונים", "קולנוע", "צרכנות", "אטרקציות", "ספא ונופש", "כללי", "מופעים", "מופעים והצגות"];
-              
-              if (genericVenues.includes(venueName)) {
-                 const found = findTrueMerchant(showName) || findTrueMerchant(showArray[0]?.title);
-                 trueMerchantName = found ? found : showName;
-              } else {
-                 const found = findTrueMerchant(venueName);
-                 if (found) trueMerchantName = found;
-              }
+        // 1. Try to find known merchant in the specific show/deal title FIRST
+        const foundFromShow = findTrueMerchant(showName) || findTrueMerchant(showArray[0]?.title);
+        
+        if (foundFromShow) {
+           trueMerchantName = foundFromShow;
+        } else {
+           // 2. Fallback: try the venue name
+           const foundFromVenue = findTrueMerchant(venueName);
+           if (foundFromVenue) {
+               trueMerchantName = foundFromVenue;
+           } else {
+               // 3. If we don't know it, and the venue name is obviously a generic bucket, promote the show name to be the brand
+               const genericKeywords = ["כללי", "קולנוע", "צרכנות", "אטרקציות", "ספא", "נופש", "מופעים", "מזון מהיר", "מסעדות", "חדרי בריחה", "הופעות", "סטנדאפ"];
+               const isGenericVenue = genericKeywords.some(g => venueName.includes(g));
+               if (isGenericVenue) {
+                   trueMerchantName = showName;
+               }
+           }
+        }
 
-              // Inject the scraped venue into our known merchants database
-              if (!updatedMerchants[trueMerchantName]) {
-                updatedMerchants[trueMerchantName] = {
-                  cat: mappedAppCategory,
-                  networks: [], 
-                  aliases: [trueMerchantName.toLowerCase(), showName.toLowerCase()]
-                };
-              }
+        // Inject the scraped venue into our known merchants database
+        if (!updatedMerchants[trueMerchantName]) {
+          updatedMerchants[trueMerchantName] = {
+            cat: mappedAppCategory,
+            networks: [], 
+            aliases: [trueMerchantName.toLowerCase(), showName.toLowerCase()]
+          };
+        }
 
-              // Add the deals
-              showArray.forEach(show => {
-                flattenedDeals.push({
-                  m: trueMerchantName,
-                  c: 'BEHATSDAA',
-                  d: `${show.title} (${show.price})`
-                });
-              });
-            });
+        // Add the deals
+        showArray.forEach(show => {
+          flattenedDeals.push({
+            m: trueMerchantName,
+            c: 'BEHATSDAA',
+            d: `${show.title} (${show.price})`
           });
         });
+      });
 
         setLiveDeals(flattenedDeals);
         setDynamicMerchants(updatedMerchants);
