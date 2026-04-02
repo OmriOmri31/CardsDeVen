@@ -29,6 +29,8 @@ const CATEGORIES = Object.keys(CATEGORY_ICONS);
 const HEBREW_TO_APP_CATEGORIES = {
   "בידור וסטנד אפ": "Cinemas", 
   "מופעים ומוזיקה": "Cinemas",
+  "מופעים": "Cinemas",
+  "קולנוע": "Cinemas",
   "אטרקציות": "Kids & Baby",
   "ספא ונופש": "Spas & Wellness",
   "צרכנות": "Online Retail & Delivery",
@@ -44,7 +46,7 @@ const CATEGORY_ALIASES = {
   "Hotels & Lodging": ["hotel", "lodging", "vacation", "resort", "מלון", "מלונות", "נופש", "לינה", "חופשה"],
   "Spas & Wellness": ["spa", "wellness", "massage", "ספא", "עיסוי", "טיפולים"],
   "Electronics": ["electronics", "computers", "mobile", "phone", "חשמל", "אלקטרוניקה", "מחשבים", "מוצרי חשמל", "סלולר", "טלפון"],
-  "Cinemas": ["cinema", "movie", "movies", "film", "קולנוע", "סרט", "סרטים", "סינמה", "הופעה", "סטנדאפ"],
+  "Cinemas": ["cinema", "movie", "movies", "film", "קולנוע", "סרט", "סרטים", "סינמה", "הופעה", "סטנדאפ", "מופע"],
   "Food Chains & Restaurants": ["food", "restaurant", "dining", "cafe", "burger", "pizza", "אוכל", "מסעדה", "מסעדות", "בית קפה", "בתי קפה", "פיצה", "המבורגר", "סושי"],
   "Online Retail & Delivery": ["online", "delivery", "ecommerce", "אונליין", "משלוח", "משלוחים", "אינטרנט", "קניות ברשת"],
   "Pharmacy & Health": ["pharmacy", "health", "makeup", "פארם", "בית מרקחת", "בריאות", "תרופות", "איפור", "קוסמטיקה", "פארמה"],
@@ -378,26 +380,52 @@ export default function App() {
           // 2. Iterate through Venues
           Object.entries(venues).forEach(([venueName, showsObject]) => {
             
-            // Inject the scraped venue into our known merchants
-            if (!updatedMerchants[venueName]) {
-              updatedMerchants[venueName] = {
-                cat: mappedAppCategory,
-                networks: [], 
-                aliases: [venueName.toLowerCase()]
+            // 3. Iterate through the Show Names
+            Object.entries(showsObject).forEach(([showName, showArray]) => {
+              
+              // --- THE SMART PROMOTER ---
+              // If the scraper used a generic word for the venue, we elevate the specific Show Name 
+              // (e.g. "Cinema City") to be the venue name.
+              let trueMerchantName = venueName;
+              
+              const findTrueMerchant = (text) => {
+                if (!text) return null;
+                const lower = text.toLowerCase();
+                for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
+                  if (knownName.toLowerCase().includes(lower)) return knownName;
+                  if (data.aliases && data.aliases.some(alias => lower.includes(alias.toLowerCase()))) return knownName;
+                }
+                return null;
               };
-            }
 
-            // 3. Iterate through the Show Names object, THEN the array of deals
-            Object.values(showsObject).forEach((showArray) => {
+              const genericVenues = ["כללי / מיקומים שונים", "קולנוע", "צרכנות", "אטרקציות", "ספא ונופש", "כללי", "מופעים", "מופעים והצגות"];
+              
+              if (genericVenues.includes(venueName)) {
+                 const found = findTrueMerchant(showName) || findTrueMerchant(showArray[0]?.title);
+                 trueMerchantName = found ? found : showName;
+              } else {
+                 const found = findTrueMerchant(venueName);
+                 if (found) trueMerchantName = found;
+              }
+
+              // Inject the scraped venue into our known merchants database
+              if (!updatedMerchants[trueMerchantName]) {
+                updatedMerchants[trueMerchantName] = {
+                  cat: mappedAppCategory,
+                  networks: [], 
+                  aliases: [trueMerchantName.toLowerCase(), showName.toLowerCase()]
+                };
+              }
+
+              // Add the deals
               showArray.forEach(show => {
                 flattenedDeals.push({
-                  m: venueName,
+                  m: trueMerchantName,
                   c: 'BEHATSDAA',
                   d: `${show.title} (${show.price})`
                 });
               });
             });
-            
           });
         });
 
@@ -652,7 +680,6 @@ export default function App() {
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
     
-    // Check against all live deals instead of hardcoded
     const activeDiscounts = allDiscountsData.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => `${c.name}:₪${c.remaining}`).join(', ');
     const merchantNames = Object.keys(dynamicMerchants).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
