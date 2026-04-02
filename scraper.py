@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 import firebase_admin
 from firebase_admin import credentials, db
+import google.generativeai as genai
 
 # ==========================================
 # 1. CONFIGURATION & INITIALIZATION
@@ -15,6 +16,9 @@ from firebase_admin import credentials, db
 FIREBASE_KEY_PATH = r"C:\Users\iamam\OneDrive\Desktop\cardsdeven-firebase-adminsdk-fbsvc-dac77be72f.json"
 BEHATSDAA_ID = "209056860"
 DATABASE_URL = 'https://cardsdeven-default-rtdb.firebaseio.com/'
+
+# Use the API key from your React app for the embeddings
+genai.configure(api_key="AIzaSyD7zizhVjdItYUtV3apUvnuEiHPOhbiHS8")
 
 if not firebase_admin._apps:
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
@@ -75,7 +79,7 @@ def get_new_otp(start_time, timeout_seconds=120):
 def push_to_github():
     print("--- Git Automation Started ---")
     try:
-        subprocess.run(["git", "add", "public/data.json"], check=True)
+        subprocess.run(["git", "add", "cardsdeven/public/data.json"], check=True)
         commit_msg = f"auto-scrape: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
         
@@ -102,32 +106,24 @@ def get_page_topic(page):
     return "כללי"
 
 def categorize_and_route(breadcrumb_topic, image_text, title, address):
-    """The Sieve: Sorts the raw data into a strict Category -> Venue -> Show hierarchy."""
-    
     STANDUP_VENUES = ["COMY", "קאמל קומדי קלאב", "סטנדאפ פקטורי"]
     MUSIC_VENUES = ["זאפה", "מועדון גריי", "גריי", "ברלה", "רידינג 3", "בארבי", "שוני", "קו רקיע"]
-    
-    # Standup triggers (including common comedian names as fallback)
     STANDUP_KEYWORDS = ["סטנדאפ", "סטנד אפ", "סטנד-אפ", "קומדיה", "מופע בידור", "מצחיק", "צחוק", "קורע", 
                         "חסון", "נוסבאום", "קוריאט", "קפח", "אשכנזי", "יצחקי", "ברוך"]
     
-    # 1. Determine Venue
     venue = breadcrumb_topic
     if venue in ["בידור וסטנד אפ", "מופעים", "מופעים והצגות", "כללי", "אטרקציות", ""]:
         venue = "כללי / מיקומים שונים"
         
-    # Check address or title for venue clues if it's generic
     if venue == "כללי / מיקומים שונים":
         for v in STANDUP_VENUES + MUSIC_VENUES:
             if v in address or v in title:
                 venue = v
                 break
 
-    # 2. Determine Master Category
     check_string = f"{breadcrumb_topic} {image_text} {title}".lower()
     master_category = breadcrumb_topic if breadcrumb_topic else "כללי"
 
-    # Route based on keywords and anchor venues
     if any(v in venue for v in STANDUP_VENUES) or any(k in check_string for k in STANDUP_KEYWORDS):
         master_category = "בידור וסטנד אפ"
     elif any(v in venue for v in MUSIC_VENUES) or "מופע" in check_string or "מחווה" in check_string:
@@ -135,7 +131,6 @@ def categorize_and_route(breadcrumb_topic, image_text, title, address):
     elif breadcrumb_topic in ["מופעים", "מופעים והצגות"]:
         master_category = "מופעים ומוזיקה"
         
-    # 3. Determine Show Name
     show_name = image_text.strip() if image_text and len(image_text) <= 40 else title.strip()
     if not show_name:
         show_name = "כללי"
@@ -143,7 +138,61 @@ def categorize_and_route(breadcrumb_topic, image_text, title, address):
     return master_category, venue, show_name
 
 # ==========================================
-# 3. PAGE SCRAPING LOGIC
+# 3. AI EMBEDDING GENERATOR
+# ==========================================
+
+def generate_embeddings(nested_data):
+    """Turns all scraped deals into mathematical vectors for instant AI searching."""
+    print("\n--- Generating AI Search Vectors ---")
+    flat_deals = []
+    
+    # Flatten the data for embedding
+    for category, venues in nested_data.items():
+        for venue, shows in venues.items():
+            for show_name, deals in shows.items():
+                for deal in deals:
+                    search_string = f"[{category}] {venue} - {show_name}: {deal['title']} ({deal['price']}) at {deal['address']}"
+                    flat_deals.append({
+                        "m": venue,
+                        "c": "BEHATSDAA",
+                        "d": f"{deal['title']} ({deal['price']})",
+                        "search_text": search_string
+                    })
+    
+    print(f"Total deals to embed: {len(flat_deals)}")
+    
+    # Batch request embeddings from Google (100 at a time to be safe)
+    batch_size = 100
+    vectorized_deals = []
+    
+    for i in range(0, len(flat_deals), batch_size):
+        batch = flat_deals[i:i+batch_size]
+        texts = [item['search_text'] for item in batch]
+        
+        print(f"Embedding batch {i} to {i+len(batch)}...")
+        try:
+            response = genai.embed_content(
+                model="models/text-embedding-004",
+                content=texts,
+                task_type="retrieval_document"
+            )
+            
+            for j, embedding in enumerate(response['embedding']):
+                deal = batch[j]
+                vectorized_deals.append({
+                    "m": deal["m"],
+                    "c": deal["c"],
+                    "d": deal["d"],
+                    "v": embedding # The mathematical vector
+                })
+        except Exception as e:
+            print(f"Failed to embed batch: {e}")
+            
+    print("Vector generation complete!")
+    return vectorized_deals
+
+# ==========================================
+# 4. PAGE SCRAPING LOGIC
 # ==========================================
 
 def scrape_page_data(page, url, master_data):
@@ -154,7 +203,6 @@ def scrape_page_data(page, url, master_data):
         print(f"Skipping {url} - Failed to load: {e}")
         return
 
-    # Verify Home Page
     if url == "https://www.behatsdaa.org.il/":
         try:
             page.wait_for_selector('img.logo-item.cursor-pointer[alt="לוגו בהצדעה"]', timeout=5000)
@@ -164,7 +212,6 @@ def scrape_page_data(page, url, master_data):
 
     topic = get_page_topic(page)
 
-    # Extract Data
     try:
         page.wait_for_timeout(3000)
         cards = page.locator(".categories-container-item").all()
@@ -182,11 +229,8 @@ def scrape_page_data(page, url, master_data):
                     image_text = img_locator.get_attribute("alt", timeout=1000)
                 
                 image_text = image_text.strip() if image_text else ""
-                
-                # --- APPLY THE ROUTER ---
                 master_category, venue, show_name = categorize_and_route(topic, image_text, title, address)
                 
-                # Build the 3-Tier Dictionary if keys don't exist
                 if master_category not in master_data:
                     master_data[master_category] = {}
                 if venue not in master_data[master_category]:
@@ -210,7 +254,7 @@ def scrape_page_data(page, url, master_data):
         print(f"Error reading cards on {url}: {e}")
 
 # ==========================================
-# 4. MAIN EXECUTOR
+# 5. MAIN EXECUTOR
 # ==========================================
 
 def run_scraper(headless_mode=True):
@@ -231,40 +275,34 @@ def run_scraper(headless_mode=True):
         try:
             print("Navigating to Behatsdaa...")
             page.goto("https://www.behatsdaa.org.il/login", wait_until="networkidle")
-            
-            print("Entering ID...")
             page.fill("#loginIdWithShortCode", BEHATSDAA_ID) 
-            
-            print("Requesting SMS...")
             page.click("button:has-text('שלחו לי קוד חד פעמי לנייד ולמייל')") 
             
-            print("Credentials submitted. Waiting for SMS...")
             otp_code = get_new_otp(start_time)
-            
-            print(f"Received OTP ({otp_code})! Entering into browser...")
             page.wait_for_selector("#shortCode", state="visible")
             page.locator("#shortCode").press_sequentially(otp_code, delay=150)
             page.wait_for_timeout(500)
-            
             page.click("button:has-text('התחברות')") 
             
-            print("Waiting for login redirect to complete...")
             page.wait_for_timeout(5000) 
             page.wait_for_load_state("networkidle") 
-            print("Login Successful!")
 
             for url in TARGET_URLS:
                 scrape_page_data(page, url, all_scraped_data)
 
+            # Generate the math vectors for AI Search
+            vector_deals = generate_embeddings(all_scraped_data)
+
             final_json = {
                 "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "data": all_scraped_data
+                "data": all_scraped_data,
+                "vectors": vector_deals # Saving the math data into the same file
             }
 
             os.makedirs("cardsdeven/public", exist_ok=True)
             with open("cardsdeven/public/data.json", "w", encoding="utf-8") as f:
                 json.dump(final_json, f, ensure_ascii=False, indent=4)
-            print("\nScraping complete. Data saved to public/data.json.")
+            print("\nScraping complete. Data saved to cardsdeven/public/data.json.")
 
         except Exception as e:
             print(f"A critical error occurred: {e}")

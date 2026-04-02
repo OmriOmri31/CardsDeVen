@@ -1,102 +1,96 @@
-export const handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
+const { GoogleGenerativeAI } = require('@google/generativeai');
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyBjn2oGHj-bT_O213csvNPLoEliTdWbS4M");
+
+// Cosine Similarity Math Formula
+function cosineSimilarity(vecA, vecB) {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+exports.handler = async function (event, context) {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
+  }
 
   try {
-    const { query, history, systemInstruction } = JSON.parse(event.body);
-    const apiKey = process.env.GEMINI_API_KEY;
-    const modelCandidates = [
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash"
-    ];
+    const { query, history, systemInstruction, userClubs, walletString, merchantNames } = JSON.parse(event.body);
 
-    const truncate = (value, maxChars) => {
-      if (!value) return '';
-      const asString = String(value);
-      return asString.length > maxChars ? `${asString.slice(0, maxChars)}\n...[truncated]` : asString;
-    };
-
-    const optimizedSystemInstruction = truncate(systemInstruction, 2200);
-    const optimizedQuery = truncate(query, 1200);
-    const optimizedHistory = (Array.isArray(history) ? history : [])
-      .slice(-8)
-      .map((msg) => ({
-        role: msg?.role === 'user' ? 'user' : 'model',
-        text: truncate(msg?.text || '', 700)
-      }));
-
-    const payload = {
-      contents: [
-        ...optimizedHistory.filter((msg, idx) => !(idx === 0 && msg.role === 'model')).map(msg => ({
-          role: msg.role,
-          parts: [{ text: msg.text }]
-        })),
-        { role: "user", parts: [{ text: optimizedQuery }] }
-      ],
-      systemInstruction: { parts: [{ text: optimizedSystemInstruction }] }
-    };
-
-    const retryDelaysMs = [2000, 4000, 8000];
-    let response;
-    let lastErrorText = '';
-    let usedModel = modelCandidates[0];
-
-    for (const model of modelCandidates) {
-      usedModel = model;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      let attempt = 0;
-
-      while (attempt <= retryDelaysMs.length) {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        console.log('[Gemini] model/status:', model, response.status);
-        console.log('[Gemini] headers:', {
-          retryAfter: response.headers.get('retry-after'),
-          xRateLimitLimit: response.headers.get('x-ratelimit-limit'),
-          xRateLimitRemaining: response.headers.get('x-ratelimit-remaining'),
-          xRateLimitReset: response.headers.get('x-ratelimit-reset')
-        });
-
-        if (response.ok) break;
-
-        if (response.status === 403 || response.status === 404) {
-          lastErrorText = await response.text();
-          console.log(`[Gemini] model unavailable (${response.status}) for ${model}. Trying next fallback model.`);
-          break;
-        }
-
-        if (response.status === 429 && attempt < retryDelaysMs.length) {
-          const waitMs = retryDelaysMs[attempt];
-          console.log(`[Gemini] 429 received on ${model}. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${retryDelaysMs.length})`);
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
-          attempt += 1;
-          continue;
-        }
-
-        lastErrorText = await response.text();
-        break;
-      }
-
-      if (response?.ok) break;
-      if (response?.status && response.status !== 404) break;
+    // 1. Fetch the giant JSON file containing the math vectors from your live site
+    // (We do this dynamically so it's always the freshest scrape)
+    const host = event.headers.host;
+    const protocol = host.includes('localhost') ? 'http' : 'https';
+    const dataUrl = `${protocol}://${host}/data.json`;
+    
+    let vectorDeals = [];
+    try {
+      const dataRes = await fetch(dataUrl);
+      const fullData = await dataRes.json();
+      vectorDeals = fullData.vectors || [];
+    } catch (e) {
+      console.error("Could not fetch data.json", e);
     }
 
-    if (!response.ok) {
-      const errorDetails = lastErrorText || (await response.text());
-      return { statusCode: response.status, body: JSON.stringify({ error: errorDetails, model: usedModel }) };
+    // 2. Filter down to ONLY deals the user is eligible for based on their active clubs
+    const userClubIds = userClubs || ["BEHATSDAA", "PAIS_PLUS", "DREAMCARD"];
+    const eligibleDeals = vectorDeals.filter(deal => userClubIds.includes(deal.c));
+
+    let topDealsText = "No specific deals found.";
+
+    if (eligibleDeals.length > 0) {
+      // 3. Turn the user's question into a math vector
+      const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+      const embeddingResult = await embeddingModel.embedContent(query);
+      const userVector = embeddingResult.embedding.values;
+
+      // 4. Calculate similarity and grab the Top 40 closest matches
+      const scoredDeals = eligibleDeals.map(deal => {
+        return {
+          ...deal,
+          score: cosineSimilarity(userVector, deal.v)
+        };
+      });
+
+      scoredDeals.sort((a, b) => b.score - a.score);
+      const top40 = scoredDeals.slice(0, 40);
+      topDealsText = top40.map(d => `${d.m} - ${d.d}`).join(' | ');
     }
 
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "לא בטוח איך לענות על זה כרגע.";
+    // 5. Inject the surgically precise top 40 deals into the prompt
+    const finalSystemInstruction = `${systemInstruction}
+    
+USER'S DATA:
+- Active Discount Deals (Mathematically sorted for this specific query): ${topDealsText}
+- Wallet Cards: ${walletString || 'Empty'}
+- Supported Merchants: ${merchantNames || 'None'}`;
 
-    return { statusCode: 200, body: JSON.stringify({ result: text }) };
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: finalSystemInstruction
+    });
+
+    const chat = model.startChat({ history: history || [] });
+    const result = await chat.sendMessage(query);
+    const responseText = result.response.text();
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ result: responseText })
+    };
+
   } catch (error) {
-    console.error("Backend Error:", error);
-    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+    console.error("AI RAG Error:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message })
+    };
   }
 };
