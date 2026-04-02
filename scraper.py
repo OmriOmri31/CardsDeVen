@@ -75,19 +75,15 @@ def get_new_otp(start_time, timeout_seconds=120):
 def push_to_github():
     print("--- Git Automation Started ---")
     try:
-        # 1. Add and commit the new data locally
         subprocess.run(["git", "add", "public/data.json"], check=True)
         commit_msg = f"auto-scrape: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
         
-        # 2. Sync with GitHub (Download any cloud changes first so we don't overwrite/conflict)
         print("Pulling latest changes from GitHub...")
         subprocess.run(["git", "pull", "--rebase"], check=True)
         
-        # 3. Push the combined result back to the cloud
         print("Pushing to GitHub...")
         subprocess.run(["git", "push"], check=True)
-        
         print("Successfully pushed to GitHub!")
     except subprocess.CalledProcessError as e:
         print(f"Git Update Skipped: No changes to push or network issue. ({e})")
@@ -104,6 +100,47 @@ def get_page_topic(page):
     except Exception:
         pass
     return "כללי"
+
+def categorize_and_route(breadcrumb_topic, image_text, title, address):
+    """The Sieve: Sorts the raw data into a strict Category -> Venue -> Show hierarchy."""
+    
+    STANDUP_VENUES = ["COMY", "קאמל קומדי קלאב", "סטנדאפ פקטורי"]
+    MUSIC_VENUES = ["זאפה", "מועדון גריי", "גריי", "ברלה", "רידינג 3", "בארבי", "שוני", "קו רקיע"]
+    
+    # Standup triggers (including common comedian names as fallback)
+    STANDUP_KEYWORDS = ["סטנדאפ", "סטנד אפ", "סטנד-אפ", "קומדיה", "מופע בידור", "מצחיק", "צחוק", "קורע", 
+                        "חסון", "נוסבאום", "קוריאט", "קפח", "אשכנזי", "יצחקי", "ברוך"]
+    
+    # 1. Determine Venue
+    venue = breadcrumb_topic
+    if venue in ["בידור וסטנד אפ", "מופעים", "מופעים והצגות", "כללי", "אטרקציות", ""]:
+        venue = "כללי / מיקומים שונים"
+        
+    # Check address or title for venue clues if it's generic
+    if venue == "כללי / מיקומים שונים":
+        for v in STANDUP_VENUES + MUSIC_VENUES:
+            if v in address or v in title:
+                venue = v
+                break
+
+    # 2. Determine Master Category
+    check_string = f"{breadcrumb_topic} {image_text} {title}".lower()
+    master_category = breadcrumb_topic if breadcrumb_topic else "כללי"
+
+    # Route based on keywords and anchor venues
+    if any(v in venue for v in STANDUP_VENUES) or any(k in check_string for k in STANDUP_KEYWORDS):
+        master_category = "בידור וסטנד אפ"
+    elif any(v in venue for v in MUSIC_VENUES) or "מופע" in check_string or "מחווה" in check_string:
+        master_category = "מופעים ומוזיקה"
+    elif breadcrumb_topic in ["מופעים", "מופעים והצגות"]:
+        master_category = "מופעים ומוזיקה"
+        
+    # 3. Determine Show Name
+    show_name = image_text.strip() if image_text and len(image_text) <= 40 else title.strip()
+    if not show_name:
+        show_name = "כללי"
+
+    return master_category, venue, show_name
 
 # ==========================================
 # 3. PAGE SCRAPING LOGIC
@@ -126,14 +163,10 @@ def scrape_page_data(page, url, master_data):
             pass
 
     topic = get_page_topic(page)
-    if topic not in master_data:
-        master_data[topic] = {}
 
-    # Extract Data (Skipping the Load More button entirely)
+    # Extract Data
     try:
-        # Give the page 3 seconds to render the cards before looking for them
         page.wait_for_timeout(3000)
-        
         cards = page.locator(".categories-container-item").all()
         print(f"Found {len(cards)} sales on this page.")
         
@@ -144,17 +177,22 @@ def scrape_page_data(page, url, master_data):
                 address = card.locator(".categories-container-item-location .location-name-text").inner_text(timeout=1000).strip()
                 
                 img_locator = card.locator(".categories-container-item-img").first
-                company = img_locator.get_attribute("title", timeout=1000)
-                if not company:
-                    company = img_locator.get_attribute("alt", timeout=1000)
+                image_text = img_locator.get_attribute("title", timeout=1000)
+                if not image_text:
+                    image_text = img_locator.get_attribute("alt", timeout=1000)
                 
-                company = company.strip() if company else ""
+                image_text = image_text.strip() if image_text else ""
                 
-                if not company or len(company) > 30:
-                    company = topic
+                # --- APPLY THE ROUTER ---
+                master_category, venue, show_name = categorize_and_route(topic, image_text, title, address)
                 
-                if company not in master_data[topic]:
-                    master_data[topic][company] = []
+                # Build the 3-Tier Dictionary if keys don't exist
+                if master_category not in master_data:
+                    master_data[master_category] = {}
+                if venue not in master_data[master_category]:
+                    master_data[master_category][venue] = {}
+                if show_name not in master_data[master_category][venue]:
+                    master_data[master_category][venue][show_name] = []
                 
                 sale_item = {
                     "title": title,
@@ -162,8 +200,8 @@ def scrape_page_data(page, url, master_data):
                     "address": address
                 }
                 
-                if sale_item not in master_data[topic][company]:
-                    master_data[topic][company].append(sale_item)
+                if sale_item not in master_data[master_category][venue][show_name]:
+                    master_data[master_category][venue][show_name].append(sale_item)
 
             except Exception:
                 continue
@@ -191,7 +229,6 @@ def run_scraper(headless_mode=True):
         Stealth().apply_stealth_sync(page)
 
         try:
-            # Login Flow
             print("Navigating to Behatsdaa...")
             page.goto("https://www.behatsdaa.org.il/login", wait_until="networkidle")
             
@@ -205,7 +242,10 @@ def run_scraper(headless_mode=True):
             otp_code = get_new_otp(start_time)
             
             print(f"Received OTP ({otp_code})! Entering into browser...")
-            page.fill("#shortCode", otp_code) 
+            page.wait_for_selector("#shortCode", state="visible")
+            page.locator("#shortCode").press_sequentially(otp_code, delay=150)
+            page.wait_for_timeout(500)
+            
             page.click("button:has-text('התחברות')") 
             
             print("Waiting for login redirect to complete...")
@@ -213,11 +253,9 @@ def run_scraper(headless_mode=True):
             page.wait_for_load_state("networkidle") 
             print("Login Successful!")
 
-            # Scrape Pages
             for url in TARGET_URLS:
                 scrape_page_data(page, url, all_scraped_data)
 
-            # Build and Save JSON
             final_json = {
                 "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "data": all_scraped_data
