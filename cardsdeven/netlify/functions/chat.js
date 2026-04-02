@@ -63,7 +63,7 @@ exports.handler = async function (event, context) {
 
       scoredDeals.sort((a, b) => b.score - a.score);
       const top40 = scoredDeals.slice(0, 40);
-      topDealsText = top40.map(d => `${d.m} - ${d.d}`).join(' | ');
+      topDealsText = top40.map(d => `[Club: ${d.c}] ${d.m} - ${d.d}`).join(' | ');
     }
 
     // 5. Inject the surgically precise top 40 deals into the prompt
