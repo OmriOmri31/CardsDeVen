@@ -1,9 +1,9 @@
 {
-    "last_updated": "2026-04-02 03:28:59",
+    "last_updated": "2026-04-02 03:57:39",
     "discounts": [
         {
-            "name": "Mock Discount",
-            "value": "20%"
+            "name": "Live Data",
+            "value": "Verified"
         }
     ]
 }
