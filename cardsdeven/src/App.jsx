@@ -390,10 +390,17 @@ export default function App() {
               
               const findTrueMerchant = (text) => {
                 if (!text) return null;
-                const lower = text.toLowerCase();
+                // Add spaces around the text and remove dashes so we can enforce strict whole-word matching
+                const paddedText = ` ${text.toLowerCase().replace(/[\-\(\)]/g, ' ')} `;
+                
                 for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
-                  if (knownName.toLowerCase().includes(lower)) return knownName;
-                  if (data.aliases && data.aliases.some(alias => lower.includes(alias.toLowerCase()))) return knownName;
+                  // Check if any alias matches perfectly as a whole word
+                  if (data.aliases && data.aliases.some(alias => paddedText.includes(` ${alias.toLowerCase()} `))) {
+                    return knownName;
+                  }
+                  // Also check the main English name (e.g. "zara")
+                  const englishName = knownName.split('(')[0].trim().toLowerCase();
+                  if (paddedText.includes(` ${englishName} `)) return knownName;
                 }
                 return null;
               };

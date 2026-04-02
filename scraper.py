@@ -194,6 +194,12 @@ def generate_embeddings(nested_data):
                     "d": deal["d"],
                     "v": embedding.values # The mathematical vector
                 })
+
+                # --- THE FIX: Wait 60 seconds to respect Google's free tier limits ---
+            print("Batch complete. Resting for 60 seconds for API quota reset...")
+            time.sleep(60)
+
+            
         except Exception as e:
             print(f"Failed to embed batch: {e}")
             
