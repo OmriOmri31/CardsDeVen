@@ -25,18 +25,7 @@ const CATEGORY_ICONS = {
 };
 const CATEGORIES = Object.keys(CATEGORY_ICONS);
 
-const HEBREW_TO_APP_CATEGORIES = {
-  "בידור וסטנד אפ": "Cinemas", 
-  "מופעים ומוזיקה": "Cinemas",
-  "מופעים": "Cinemas",
-  "קולנוע": "Cinemas",
-  "אטרקציות": "Kids & Baby",
-  "ספא ונופש": "Spas & Wellness",
-  "צרכנות": "Online Retail & Delivery",
-  "קולינריה": "Food Chains & Restaurants",
-  "כללי": "Other"
-};
-
+// --- DOMAIN KNOWLEDGE: CATEGORY SEARCH ALIASES ---
 const CATEGORY_ALIASES = {
   "Supermarkets & Groceries": ["supermarket", "grocery", "groceries", "סופר", "סופרמרקט", "מכולת", "מזון"],
   "Fashion & Apparel": ["fashion", "apparel", "clothing", "clothes", "shoes", "אופנה", "בגדים", "בגדי", "הנעלה", "נעליים", "לבוש"],
@@ -44,7 +33,7 @@ const CATEGORY_ALIASES = {
   "Hotels & Lodging": ["hotel", "lodging", "vacation", "resort", "מלון", "מלונות", "נופש", "לינה", "חופשה"],
   "Spas & Wellness": ["spa", "wellness", "massage", "ספא", "עיסוי", "טיפולים"],
   "Electronics": ["electronics", "computers", "mobile", "phone", "חשמל", "אלקטרוניקה", "מחשבים", "מוצרי חשמל", "סלולר", "טלפון"],
-  "Cinemas": ["cinema", "movie", "movies", "film", "קולנוע", "סרט", "סרטים", "סינמה", "הופעה", "סטנדאפ", "מופע"],
+  "Cinemas": ["cinema", "movie", "movies", "film", "קולנוע", "סרט", "סרטים", "סינמה"],
   "Food Chains & Restaurants": ["food", "restaurant", "dining", "cafe", "burger", "pizza", "אוכל", "מסעדה", "מסעדות", "בית קפה", "בתי קפה", "פיצה", "המבורגר", "סושי"],
   "Online Retail & Delivery": ["online", "delivery", "ecommerce", "אונליין", "משלוח", "משלוחים", "אינטרנט", "קניות ברשת"],
   "Pharmacy & Health": ["pharmacy", "health", "makeup", "פארם", "בית מרקחת", "בריאות", "תרופות", "איפור", "קוסמטיקה", "פארמה"],
@@ -54,6 +43,7 @@ const CATEGORY_ALIASES = {
   "Other": ["other", "אחר", "שונות", "ספרים"]
 };
 
+// --- DOMAIN KNOWLEDGE: ISRAELI BENEFIT PROGRAMS ---
 const PROGRAMS = {
   HG: { id: 'HG', name: 'HappyGift Global', type: 'open_loop', color: 'bg-gradient-to-br from-pink-500 to-rose-600', description: 'Mastercard. Works almost everywhere.' },
   FTR: { id: 'FTR', name: 'Fighter (Miluim)', type: 'mcc', color: 'bg-gradient-to-br from-stone-700 to-stone-900', description: 'MCC Restricted. Restaurants, Leisure, Fashion.' },
@@ -74,7 +64,21 @@ const CLUBS = {
   DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', color: 'bg-slate-900' }
 };
 
-const HARDCODED_DISCOUNTS = [
+const DISCOUNTS_DATA = [
+  { m: "Domino's Pizza (דומינוס פיצה)", c: "BEHATSDAA", d: "משפחתית באיסוף מ-39 ₪, שובר 100 ב-65 ₪, ארוחות מ-65 ₪" },
+  { m: "Pizza Hut (פיצה האט)", c: "BEHATSDAA", d: "אישית מ-20 ₪, משפחתית מ-54 ₪, 2 משפחתיות מ-89 ₪" },
+  { m: "Papa John's (פאפא ג'ונס)", c: "BEHATSDAA", d: "מגשי פיצה החל מ-38 ₪" },
+  { m: "Pizza Shemesh (פיצה שמש)", c: "BEHATSDAA", d: "מגשי פיצה החל מ-39 ₪" },
+  { m: "Cinema City (סינמה סיטי)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-33 ₪" },
+  { m: "Planet (פלאנט)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-30 ₪" },
+  { m: "HOT Cinema (הוט סינמה)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-32 ₪" },
+  { m: "Movieland (מובילנד)", c: "BEHATSDAA", d: "כרטיס סרט החל מ-28 ₪" },
+  { m: "Mishloha (משלוחה)", c: "BEHATSDAA", d: "שובר 100 ₪ לניצול באפליקציה ב-70 ₪" },
+  { m: "FOX (פוקס)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
+  { m: "FOX Home (פוקס הום)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
+  { m: "Mega Sport (מגה ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
+  { m: "Aluf Sport (אלוף ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
+  { m: "Holmes Place (הולמס פלייס)", c: "BEHATSDAA", d: "כרטיסיית 10 כניסות מ-432 ₪ / מנוי חצי שנתי מ-1,012 ₪" },
   { m: "Domino's Pizza (דומינוס פיצה)", c: "PAIS_PLUS", d: "תו קנייה 150 ב-99 ש\"ח / 100 ב-69 ש\"ח" },
   { m: "Pizza Hut (פיצה האט)", c: "PAIS_PLUS", d: "2 פיצות + תוספת + מקלות שוקולד ב-120 ש\"ח" },
   { m: "Pizza Shemesh (פיצה שמש)", c: "PAIS_PLUS", d: "2 משפחתיות + תוספות + שתיה ב-75 ש\"ח" },
@@ -112,7 +116,7 @@ const HARDCODED_DISCOUNTS = [
   { m: "Sunglass Hut (סאנגלס האט)", c: "DREAMCARD", d: "10% הנחה נוספת על מבצעי החנות" }
 ];
 
-const INITIAL_KNOWN_MERCHANTS = {
+const KNOWN_MERCHANTS = {
   "Zara (זארה)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["zara", "זארה"], logo: "zara.png" },
   "Pull and Bear (פול אנד בר)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["pull", "bear", "פול", "בר"], logo: "pull_and_bear.png" },
   "Bershka (ברשקה)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["bershka", "ברשקה"] },
@@ -247,9 +251,131 @@ const INITIAL_KNOWN_MERCHANTS = {
   "Kravitz (קרביץ)": { cat: "Other", networks: ['TH', 'GT'], aliases: ["kravitz", "קרביץ"] },
 };
 
+const getLogoPath = (merchantString) => {
+  if (!merchantString) return '';
+  const merchData = KNOWN_MERCHANTS[merchantString];
+  if (merchData && merchData.logo) return `/assets/logos/${merchData.logo}`;
+  const englishPart = merchantString.split('(')[0].trim().toLowerCase();
+  const filename = englishPart.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return `/assets/logos/${filename}.png`;
+};
+
 const getDaysUntilExpiry = (dateString) => {
   if (!dateString) return Infinity;
   return Math.ceil((new Date(dateString) - new Date()) / (1000 * 60 * 60 * 24));
+};
+
+const getCalendarMonthKey = (dateInput) => {
+  const d = dateInput ? new Date(dateInput) : new Date();
+  if (Number.isNaN(d.getTime())) return getCalendarMonthKey(new Date());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const getExpenseMonthKey = (expense) => {
+  if (expense.scheduledFor) return getCalendarMonthKey(expense.scheduledFor);
+  if (expense.updatedAt) return getCalendarMonthKey(expense.updatedAt);
+  return getCalendarMonthKey(new Date());
+};
+
+/** Firestore may return Timestamp; date input needs YYYY-MM-DD */
+const toScheduledForInputValue = (v) => {
+  if (!v) return '';
+  if (typeof v === 'string') return v.slice(0, 10);
+  if (typeof v.toDate === 'function') {
+    const d = v.toDate();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  return '';
+};
+
+const checkCompatibility = (card, category, merchantName) => {
+  const pId = card.programId || 'CUSTOM';
+  const merchData = KNOWN_MERCHANTS[merchantName];
+
+  if (pId === 'HG') {
+    if (['Fuel & Transportation', 'Pharmacy & Health'].includes(category)) return { allowed: false, reason: "Blocked category" };
+    return { allowed: true, reason: "Allowed (Mastercard Network)" };
+  }
+  if (pId === 'FLEX') return { allowed: true, reason: "Usually allowed (Check policy)" };
+  if (pId === 'FTR') {
+    if (["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"].includes(category)) return { allowed: true, reason: "MCC Allowed" };
+    return { allowed: false, reason: "MCC Restricted" };
+  }
+  if (pId === 'FTR_VAC') {
+    if (category === "Hotels & Lodging") return { allowed: true, reason: "Lodging Allowed" };
+    return { allowed: false, reason: "Lodging Only" };
+  }
+  if (pId === 'CB') {
+    if (category === "Food Chains & Restaurants") return { allowed: true, reason: "Cibus Food Network" };
+    if (merchData && merchData.networks.includes('CB')) return { allowed: true, reason: "Explicit Partner" };
+    return { allowed: false, reason: "Not in partner network" };
+  }
+  if (['BM', 'GT', 'TH', 'TP', 'DC'].includes(pId)) {
+    if (!merchantName) return { allowed: false, reason: "Specific merchant required" };
+    if (merchData && merchData.networks.includes(pId)) return { allowed: true, reason: `Explicit Partner` };
+    return { allowed: false, reason: "Merchant not in network" };
+  }
+  if (pId === 'CUSTOM') {
+    if ((card.categories || []).includes(category)) return { allowed: true, reason: "Allowed Category" };
+    return { allowed: false, reason: "Category not assigned" };
+  }
+  return { allowed: false, reason: "Unknown compatibility" };
+};
+
+const getDerivedCategories = (card) => {
+  const pId = card.programId || 'CUSTOM';
+  if (pId === 'CUSTOM') return card.categories || [];
+  if (pId === 'HG' || pId === 'FLEX') return CATEGORIES.filter(c => !['Fuel & Transportation', 'Pharmacy & Health'].includes(c));
+  if (pId === 'FTR') return ["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"];
+  if (pId === 'FTR_VAC') return ["Hotels & Lodging"];
+
+  const derived = new Set();
+  if (pId === 'CB') derived.add("Food Chains & Restaurants");
+  Object.values(KNOWN_MERCHANTS).forEach((m) => {
+    if (m.networks.includes(pId)) derived.add(m.cat);
+  });
+  return Array.from(derived);
+};
+
+const getSmartMatches = (query, maxResults = 15) => {
+  if (!query) return [];
+  const q = query.toLowerCase().trim();
+
+  return Object.entries(KNOWN_MERCHANTS)
+    .filter(([name, data]) => {
+      const cleanName = name.toLowerCase().replace(/[()]/g, '');
+      const matchName = cleanName.includes(q) || cleanName.split(/\s+/).some((w) => w.startsWith(q));
+
+      const matchAlias = (data.aliases || []).some((alias) => {
+        const a = alias.toLowerCase().replace(/[()]/g, '');
+        return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
+      });
+
+      const catAliases = CATEGORY_ALIASES[data.cat] || [];
+      const matchCat = catAliases.some((alias) => {
+        const a = alias.toLowerCase();
+        return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
+      }) || data.cat.toLowerCase().includes(q);
+
+      return matchName || matchAlias || matchCat;
+    })
+    .sort(([nameA, dataA], [nameB, dataB]) => {
+      const getScore = (name, data) => {
+        const clean = name.toLowerCase().replace(/[()]/g, '');
+        if (clean === q) return 0;
+        if (clean.startsWith(q)) return 1;
+        if (clean.split(/\s+/).some((w) => w.startsWith(q))) return 2;
+        if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '') === q)) return 3;
+        if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '').startsWith(q))) return 4;
+        return 5;
+      };
+
+      const scoreA = getScore(nameA, dataA);
+      const scoreB = getScore(nameB, dataB);
+
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return nameA.localeCompare(nameB);
+    }).slice(0, maxResults);
 };
 
 const fetchGeminiAIResponse = async (query, history, systemInstruction, signal) => {
@@ -321,6 +447,20 @@ const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
+const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
+  const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
+  return (
+    <div className={`relative flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0 ${className} overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700`}>
+      <img
+        src={getLogoPath(merchantName)}
+        alt={merchantName}
+        className="w-full h-full object-cover"
+        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+      />
+      <span className="absolute text-sm" style={{ display: 'none' }}>{fallbackEmoji}</span>
+    </div>
+  );
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -333,14 +473,10 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
-  
-  const [liveDeals, setLiveDeals] = useState([]);
-  const [dynamicMerchants, setDynamicMerchants] = useState(INITIAL_KNOWN_MERCHANTS);
-
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
-  const [aiMessages, setAiMessages] = useState([{ role: 'model', text: 'מה המצב? תגיד לי מה אתה רוצה לקנות, נראה איך לא תצא פראייר היום.' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'model', text: 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎' }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
@@ -351,214 +487,11 @@ export default function App() {
   const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [newExpense, setNewExpense] = useState({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', date: new Date().toISOString().split('T')[0] });
+  const [newExpense, setNewExpense] = useState({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
   const [merchantSearch, setMerchantSearch] = useState('');
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
   const [clubSearch, setClubSearch] = useState('');
-
-  useEffect(() => {
-    const fetchLiveDeals = async () => {
-      try {
-        const response = await fetch('/data.json?nocache=' + new Date().getTime());
-        if (!response.ok) return;
-        const json = await response.json();
-
-        const flattenedDeals = [];
-        const updatedMerchants = { ...INITIAL_KNOWN_MERCHANTS };
-
-        Object.entries(json.data || {}).forEach(([masterCategory, venues]) => {
-          const mappedAppCategory = HEBREW_TO_APP_CATEGORIES[masterCategory] || "Other";
-
-          Object.entries(venues).forEach(([venueName, showsObject]) => {
-            
-            Object.entries(showsObject).forEach(([showName, showArray]) => {
-              
-              let trueMerchantName = venueName;
-              
-              const findTrueMerchant = (text) => {
-                if (!text) return null;
-                const paddedText = ` ${text.toLowerCase().replace(/[\-\(\)]/g, ' ')} `;
-                
-                for (const [knownName, data] of Object.entries(INITIAL_KNOWN_MERCHANTS)) {
-                  if (data.aliases && data.aliases.some(alias => paddedText.includes(` ${alias.toLowerCase()} `))) {
-                    return knownName;
-                  }
-                  const englishName = knownName.split('(')[0].trim().toLowerCase();
-                  if (paddedText.includes(` ${englishName} `)) return knownName;
-                }
-                return null;
-              };
-
-              const foundFromShow = findTrueMerchant(showName) || findTrueMerchant(showArray[0]?.title);
-              
-              if (foundFromShow) {
-                 trueMerchantName = foundFromShow;
-              } else {
-                 const foundFromVenue = findTrueMerchant(venueName);
-                 if (foundFromVenue) {
-                     trueMerchantName = foundFromVenue;
-                 } else {
-                     const genericKeywords = ["כללי", "קולנוע", "צרכנות", "אטרקציות", "ספא", "נופש", "מופעים", "מזון מהיר", "מסעדות", "חדרי בריחה", "הופעות", "סטנדאפ"];
-                     const isGenericVenue = genericKeywords.some(g => venueName.includes(g));
-                     if (isGenericVenue) {
-                         trueMerchantName = showName;
-                     }
-                 }
-              }
-
-              if (!updatedMerchants[trueMerchantName]) {
-                updatedMerchants[trueMerchantName] = {
-                  cat: mappedAppCategory,
-                  networks: [], 
-                  aliases: [trueMerchantName.toLowerCase(), showName.toLowerCase()]
-                };
-              }
-
-              showArray.forEach(show => {
-                flattenedDeals.push({
-                  m: trueMerchantName,
-                  c: 'BEHATSDAA',
-                  d: `${show.title} (${show.price})`
-                });
-              });
-            });
-          });
-        });
-
-        setLiveDeals(flattenedDeals);
-        setDynamicMerchants(updatedMerchants);
-      } catch (error) {
-        console.error("Failed to load live deals:", error);
-      }
-    };
-
-    fetchLiveDeals();
-  }, []);
-
-  const allDiscountsData = useMemo(() => {
-    return [...HARDCODED_DISCOUNTS, ...liveDeals];
-  }, [liveDeals]);
-
-
-  const getLogoPath = (merchantString) => {
-    if (!merchantString) return '';
-    const merchData = dynamicMerchants[merchantString];
-    if (merchData && merchData.logo) return `/assets/logos/${merchData.logo}`;
-    const englishPart = merchantString.split('(')[0].trim().toLowerCase();
-    const filename = englishPart.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    return `/assets/logos/${filename}.png`;
-  };
-
-  const checkCompatibility = (card, category, merchantName) => {
-    const pId = card.programId || 'CUSTOM';
-    const merchData = dynamicMerchants[merchantName];
-
-    if (pId === 'HG') {
-      if (['Fuel & Transportation', 'Pharmacy & Health'].includes(category)) return { allowed: false, reason: "Blocked category" };
-      return { allowed: true, reason: "Allowed (Mastercard Network)" };
-    }
-    if (pId === 'FLEX') return { allowed: true, reason: "Usually allowed (Check policy)" };
-    if (pId === 'FTR') {
-      if (["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"].includes(category)) return { allowed: true, reason: "MCC Allowed" };
-      return { allowed: false, reason: "MCC Restricted" };
-    }
-    if (pId === 'FTR_VAC') {
-      if (category === "Hotels & Lodging") return { allowed: true, reason: "Lodging Allowed" };
-      return { allowed: false, reason: "Lodging Only" };
-    }
-    if (pId === 'CB') {
-      if (category === "Food Chains & Restaurants") return { allowed: true, reason: "Cibus Food Network" };
-      if (merchData && merchData.networks.includes('CB')) return { allowed: true, reason: "Explicit Partner" };
-      return { allowed: false, reason: "Not in partner network" };
-    }
-    if (['BM', 'GT', 'TH', 'TP', 'DC'].includes(pId)) {
-      if (!merchantName) return { allowed: false, reason: "Specific merchant required" };
-      if (merchData && merchData.networks.includes(pId)) return { allowed: true, reason: `Explicit Partner` };
-      return { allowed: false, reason: "Merchant not in network" };
-    }
-    if (pId === 'CUSTOM') {
-      if ((card.categories || []).includes(category)) return { allowed: true, reason: "Allowed Category" };
-      return { allowed: false, reason: "Category not assigned" };
-    }
-    return { allowed: false, reason: "Unknown compatibility" };
-  };
-
-  const getDerivedCategories = (card) => {
-    const pId = card.programId || 'CUSTOM';
-    if (pId === 'CUSTOM') return card.categories || [];
-    if (pId === 'HG' || pId === 'FLEX') return CATEGORIES.filter(c => !['Fuel & Transportation', 'Pharmacy & Health'].includes(c));
-    if (pId === 'FTR') return ["Food Chains & Restaurants", "Fashion & Apparel", "Cinemas", "Spas & Wellness", "Online Retail & Delivery", "Hotels & Lodging"];
-    if (pId === 'FTR_VAC') return ["Hotels & Lodging"];
-
-    const derived = new Set();
-    if (pId === 'CB') derived.add("Food Chains & Restaurants");
-    Object.values(dynamicMerchants).forEach((m) => {
-      if (m.networks.includes(pId)) derived.add(m.cat);
-    });
-    return Array.from(derived);
-  };
-
-  const getSmartMatches = (query, maxResults = 15) => {
-    if (!query) return [];
-    const q = query.toLowerCase().trim();
-
-    return Object.entries(dynamicMerchants)
-      .filter(([name, data]) => {
-        const cleanName = name.toLowerCase().replace(/[()]/g, '');
-        const matchName = cleanName.includes(q) || cleanName.split(/\s+/).some((w) => w.startsWith(q));
-
-        const matchAlias = (data.aliases || []).some((alias) => {
-          const a = alias.toLowerCase().replace(/[()]/g, '');
-          return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
-        });
-
-        const catAliases = CATEGORY_ALIASES[data.cat] || [];
-        const matchCat = catAliases.some((alias) => {
-          const a = alias.toLowerCase();
-          return a.includes(q) || a.split(/\s+/).some((w) => w.startsWith(q));
-        }) || data.cat.toLowerCase().includes(q);
-
-        const hasMatchingDeal = allDiscountsData.some(
-          (deal) => deal.m === name && deal.d.toLowerCase().includes(q)
-        );
-
-        return matchName || matchAlias || matchCat || hasMatchingDeal;
-      })
-      .sort(([nameA, dataA], [nameB, dataB]) => {
-        const getScore = (name, data) => {
-          const clean = name.toLowerCase().replace(/[()]/g, '');
-          if (clean === q) return 0;
-          if (clean.startsWith(q)) return 1;
-          if (clean.split(/\s+/).some((w) => w.startsWith(q))) return 2;
-          if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '') === q)) return 3;
-          if ((data.aliases || []).some((a) => a.toLowerCase().replace(/[()]/g, '').startsWith(q))) return 4;
-          return 5;
-        };
-
-        const scoreA = getScore(nameA, dataA);
-        const scoreB = getScore(nameB, dataB);
-
-        if (scoreA !== scoreB) return scoreA - scoreB;
-        return nameA.localeCompare(nameB);
-      }).slice(0, maxResults);
-  };
-
-  const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
-    const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
-    return (
-      <div className={`relative flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0 ${className} overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700`}>
-        <img
-          src={getLogoPath(merchantName)}
-          alt={merchantName}
-          className="w-full h-full object-cover"
-          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-        />
-        <span className="absolute text-sm" style={{ display: 'none' }}>{fallbackEmoji}</span>
-      </div>
-    );
-  };
-
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -627,29 +560,36 @@ export default function App() {
     await setDoc(doc(getFirestore(), getCollectionPath(user.uid, 'settings'), 'clubsProfile'), { activeClubs: newClubs }, { merge: true });
   };
 
-  const cardBalances = useMemo(() => cards.map((card) => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    const spent = expenses.filter((e) => {
-      if (e.cardId !== card.id) return false;
-      
-      // Feature: Monthly Resets
-      // If a card resets monthly, we ONLY deduct expenses that are scheduled for THIS CURRENT month
-      if (card.ruleType === 'monthly') {
-        const expenseDate = new Date(e.date || e.updatedAt);
-        if (expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear) {
-          return true;
+  const cardBalances = useMemo(() => {
+    const monthKey = getCalendarMonthKey(new Date());
+    return cards.map((card) => {
+      const spent = expenses.reduce((sum, e) => {
+        if (e.cardId !== card.id) return sum;
+        if (card.ruleType === 'monthly') {
+          if (getExpenseMonthKey(e) !== monthKey) return sum;
         }
-        return false;
-      }
-      return true;
-    }).reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        return sum + parseFloat(e.amount || 0);
+      }, 0);
+      const derivedCats = getDerivedCategories(card);
+      return { ...card, spent, remaining: parseFloat(card.balance) - spent, derivedCats };
+    });
+  }, [cards, expenses]);
 
-    const derivedCats = getDerivedCategories(card);
-    return { ...card, spent, remaining: parseFloat(card.balance) - spent, derivedCats };
-  }), [cards, expenses, dynamicMerchants]);
+  const getRemainingForCardMonth = (card, monthKey) => {
+    const spent = expenses.reduce((sum, e) => {
+      if (e.cardId !== card.id) return sum;
+      if (card.ruleType === 'monthly') {
+        if (getExpenseMonthKey(e) !== monthKey) return sum;
+      }
+      return sum + parseFloat(e.amount || 0);
+    }, 0);
+    return parseFloat(card.balance) - spent;
+  };
+
+  const uniqueCoverageCategories = useMemo(
+    () => [...new Set(cardBalances.flatMap((c) => c.derivedCats || []))].sort(),
+    [cardBalances]
+  );
 
   const sortedCardBalances = useMemo(() => [...cardBalances].sort((a, b) => {
     const aDays = a.ruleType === 'expires' ? getDaysUntilExpiry(a.expiryDate) : Infinity;
@@ -677,7 +617,7 @@ export default function App() {
     return Object.entries(grouped).filter(([_, data]) => data.total > 0).sort((a, b) => b[1].total - a[1].total);
   }, [cardBalances]);
 
-  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => new Date(b.date || b.updatedAt) - new Date(a.date || a.updatedAt)), [expenses]);
+  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)), [expenses]);
 
   useEffect(() => {
     if (activeTab === 'ai') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -689,65 +629,68 @@ export default function App() {
     aiRequestInFlightRef.current = true;
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
-    
     const userText = aiInput.trim();
     const preferredLanguage = detectInputLanguage(userText);
     const newMessages = [...aiMessages, { role: 'user', text: userText }];
     setAiMessages(newMessages);
     setAiInput('');
     setIsAiTyping(true);
-
+    const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
+    const activeDiscounts = DISCOUNTS_DATA.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => {
-      const ruleTxt = c.ruleType === 'monthly' ? '(Resets on the 1st of the month)' : '';
-      return `${c.name}: ₪${c.remaining} remaining out of ₪${c.balance} ${ruleTxt}`;
+      let line = `${c.name}:₪${c.remaining} (limit ₪${parseFloat(c.balance).toLocaleString()})`;
+      if (c.ruleType === 'monthly') line += ' [MONTHLY: balance resets on the 1st; spending counts per calendar month]';
+      return line;
     }).join(' | ');
-    
-    const merchantNames = Object.keys(dynamicMerchants).map((k) => k.split('(')[0].trim()).join(', ');
-    
-    const systemInstruction = `You are a highly sarcastic, street-smart Israeli financial advisor. 
-Your goal is to save the user money, but you speak like a real person from Tel Aviv—dry humor, direct, no generic AI cringe. 
+    const futurePlansSummary = expenses
+      .filter((e) => e.scheduledFor && new Date(e.scheduledFor) > new Date())
+      .slice(0, 12)
+      .map((e) => `${e.name}:₪${e.amount} on ${e.scheduledFor}${e.cardId ? ` (card ${cards.find((c) => c.id === e.cardId)?.name || e.cardId})` : ''}`)
+      .join(' | ') || 'None';
+    const merchantNames = Object.keys(KNOWN_MERCHANTS).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
+    const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
+Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
+
+USER'S DATA:
+- Clubs: ${activeClubsList || 'None'}
+- Wallet Cards (with balances): ${walletString || 'Empty'}
+- Future-dated purchase plans (scheduled): ${futurePlansSummary}
+- Available Discounts: ${activeDiscounts || 'None'}
+- Supported Merchants: ${merchantNames}
+
+### MONTHLY & FUTURE PLANNING RULES:
+- Cards marked MONTHLY reset to their full limit on the 1st of each calendar month; only expenses in that month (by "planned for" date or logged date) reduce that month's balance.
+- If the user plans a purchase for a future month, treat that month's refilled balance when recommending combos (e.g. they can wait until after the 1st).
+- Mention split payment at checkout when a single card cannot cover the full amount this month but another card or cash/card can cover the gap.
 
 ### TONE & PERSONALITY:
-- MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only.
+- MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only. Do not mix languages unless user asks.
 - Reply natively in the EXACT language the user used.
-- Be highly sarcastic and street-smart. Cut the bullshit. Do NOT sound like an enthusiastic AI cheerleader. Avoid cringe emojis like 🌟 or 💡. Use realistic humor (e.g., "שמע אחי, אתה חי בסרט אם תשלם מחיר מלא", "בוא נראה איך לא תצא פראייר היום").
-- Answer normally and naturally. DO NOT include a "Call to Action" or ask questions at the end.
-- IMPORTANT: When mentioning where a deal comes from, ONLY use the official club names (like "בהצדעה", "פיס פלוס", or "DreamCard"). NEVER mention website subcategories.
-- FUTURE PLANNING: Notice if a user's card "Resets on the 1st of the month". If they are planning a future purchase, explicitly tell them to wait for the 1st so the card refills!
+- Be highly energetic, direct, and slightly humorous (Israeli style). Use emojis appropriately (e.g., "מישהו פה מתכנן חגיגה 🍕", "ברור, בוא נארגן לך הופעה פצצה לחתונה 👔").
+- DO NOT be generic. Do not just list stores. Be a decisive, mathematical advisor.
+
+### DECISION LOGIC:
+1. INTENT: What does the user want to buy?
+2. MATCH: Which merchants from the 'Supported Merchants' list sell this?
+3. CALCULATE THE BEST DEAL: Check 'Available Discounts' for those merchants. Then, check 'Wallet Cards' to see which card actually has enough money to pay for it.
+4. RECOMMEND: You MUST choose the absolute best combination of [Merchant] + [Discount] + [Specific Card to pay with].
 
 ### STRICT RESPONSE FORMAT:
-Your response must follow this natural structure (use bold text for emphasis):
+Your response must ALWAYS follow this exact structure (use bold text for emphasis, but DO NOT use Markdown headers like # or ## to keep the chat UI clean):
 
-**The "Tachles" Opening:** 1-2 lines with dry Israeli humor acknowledging the request.
+**Witty Opening:** 1-2 lines acknowledging the request with a fun, enthusiastic tone.
 
-**הקומבינה (The Winning Combo):** Tell them EXACTLY where to go, which discount to claim from their official club (e.g., "דרך בהצדעה"), and exactly which card from their wallet to use. Mention their card balance.
-*Example: "לך לפוקס. יש לך דרך 'בהצדעה' שובר של 150 ב-100 ש"ח, תעביר את זה בכרטיס HappyGift שלך (יש לך שם 500 ש"ח, תחגוג)."*
+🌟 **השילוב המנצח (The Winning Combo):** Tell them EXACTLY where to go, which discount to claim from their clubs, and exactly which card from their wallet to use. You MUST mention their specific card balance.
+*Example: "לך לפוקס. יש לך ב'בהצדעה' שובר של 150 ב-100 ש"ח, ותשלם עליו עם כרטיס ה-HappyGift שלך (יש לך שם 500 ש"ח!)."*
 
-**תוכנית ב' (Alternative Options):** List 1-2 other relevant options from their data, stating the official club.
+💡 **עוד אופציות טובות (Alternative Options):** List 1-2 other relevant merchants from their data where they have valid cards or discounts.
 
-**אזהרת תקציב (Budget Note - ONLY IF RELEVANT):** If the cost is higher than their available balance, explicitly tell them they'll need to do a "Split Payment" (לפצל תשלום) at the register. Or, if the card resets on the 1st, tell them to wait!`;
+⚠️ **שים לב לתקציב (Budget Note - ONLY IF RELEVANT):** If the estimated cost of the item is likely higher than their available card balance, explicitly tell them they will need to do a "Split Payment" (לפצל תשלום) at the register with a regular credit card.
 
+🎯 **שאלה למיקוד (Call to Action):** End with one short question to narrow down their needs (e.g., "מחפש בגדי גברים או נשים?", "בא לך משלוח או לשבת במסעדה?").`;
     try {
-      const payload = {
-         query: userText, 
-         history: aiMessages, 
-         systemInstruction,
-         userClubs: userClubs,
-         walletString: walletString,
-         merchantNames: merchantNames
-      };
-
-      const response = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: abortControllerRef.current.signal
-      });
-
-      if (!response.ok) throw new Error(`Status ${response.status}`);
-      const data = await response.json();
-      
-      if (data.result) setAiMessages([...newMessages, { role: 'model', text: data.result }]);
+      const responseText = await fetchGeminiAIResponse(userText, aiMessages, systemInstruction, abortControllerRef.current.signal);
+      if (responseText) setAiMessages([...newMessages, { role: 'model', text: responseText }]);
     } catch (err) {
       if (err.name !== 'AbortError') setAiMessages([...newMessages, { role: 'model', text: `אופס, משהו השתבש בחיבור שלי. 😅\n\n${err.message}` }]);
     } finally {
@@ -757,7 +700,7 @@ Your response must follow this natural structure (use bold text for emphasis):
   };
 
   const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] }); setEditingCardId(null); setShowCardForm(false); };
-  const resetExpenseForm = () => { setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', date: new Date().toISOString().split('T')[0] }); setMerchantSearch(''); setEditingExpenseId(null); setShowExpenseForm(false); };
+  const resetExpenseForm = () => { setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' }); setMerchantSearch(''); setEditingExpenseId(null); setShowExpenseForm(false); };
 
   const handleSaveCard = async (e) => {
     e.preventDefault();
@@ -779,17 +722,25 @@ Your response must follow this natural structure (use bold text for emphasis):
     if (!user || !newExpense.name || !newExpense.amount || !newExpense.category || !newExpense.cardId) return;
     const reqAmount = parseFloat(newExpense.amount);
     const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
+    const planningMonthKey = newExpense.scheduledFor
+      ? getCalendarMonthKey(newExpense.scheduledFor)
+      : getCalendarMonthKey(new Date());
+    const planningRemaining = selectedCard
+      ? getRemainingForCardMonth(selectedCard, planningMonthKey)
+      : 0;
     let saveAmount = reqAmount;
     let isSplit = false;
     if (selectedCard && !editingExpenseId) {
       if (newExpense.isManualSplit && newExpense.chargeAmount) saveAmount = parseFloat(newExpense.chargeAmount);
-      if (saveAmount > selectedCard.remaining) saveAmount = selectedCard.remaining;
+      if (saveAmount > planningRemaining) saveAmount = planningRemaining;
       if (saveAmount < reqAmount) isSplit = true;
     }
     const expenseData = {
       name: isSplit ? (newExpense.name.includes('(Part') ? newExpense.name : `${newExpense.name} (Part 1)`) : newExpense.name,
       amount: saveAmount, category: newExpense.category, merchantName: newExpense.merchantName, cardId: newExpense.cardId,
-      isCompleted: newExpense.isCompleted || false, date: newExpense.date, updatedAt: editingExpenseId ? (newExpense.updatedAt || new Date().toISOString()) : new Date().toISOString()
+      isCompleted: newExpense.isCompleted || false,
+      scheduledFor: newExpense.scheduledFor ? new Date(`${newExpense.scheduledFor}T12:00:00`).toISOString() : null,
+      updatedAt: editingExpenseId ? (newExpense.updatedAt || new Date().toISOString()) : new Date().toISOString()
     };
     if (editingExpenseId) await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), editingExpenseId), expenseData);
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'expenses')), expenseData);
@@ -814,8 +765,24 @@ Your response must follow this natural structure (use bold text for emphasis):
   const deleteCard = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), id)); showToastMsg('Card removed'); } };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
   const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [] }); setEditingCardId(card.id); setShowCardForm(true); };
-  const startEditExpense = (expense) => { setNewExpense({ ...expense, date: expense.date || expense.updatedAt.split('T')[0] }); setMerchantSearch(expense.merchantName || ''); setEditingExpenseId(expense.id); setShowExpenseForm(true); };
-  const startQuickExpense = (cardId) => { resetExpenseForm(); setNewExpense((prev) => ({ ...prev, cardId })); setShowExpenseForm(true); };
+  const startEditExpense = (expense) => {
+    setNewExpense({
+      ...expense,
+      amount: expense.amount != null ? String(expense.amount) : '',
+      scheduledFor: toScheduledForInputValue(expense.scheduledFor),
+      isManualSplit: false,
+      chargeAmount: '',
+    });
+    setMerchantSearch(expense.merchantName || '');
+    setEditingExpenseId(expense.id);
+    setShowExpenseForm(true);
+  };
+  const startQuickExpense = (cardId) => {
+    setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId, isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+    setMerchantSearch('');
+    setEditingExpenseId(null);
+    setShowExpenseForm(true);
+  };
   const handleMerchantSelect = (name, cat) => { setMerchantSearch(name); setNewExpense({ ...newExpense, merchantName: name, category: cat, cardId: '' }); setShowMerchantSuggestions(false); };
   const toggleCategorySelection = (cat) => {
     setNewCard((prev) => {
@@ -964,49 +931,30 @@ Your response must follow this natural structure (use bold text for emphasis):
                     const percentRemaining = Math.max(0, Math.min(100, (card.remaining / parseFloat(card.balance)) * 100));
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
                     return (
-                      <div key={card.id} className="relative group perspective-1000 flex flex-col h-full">
-                        <div className={`${card.color || GRADIENTS[0]} rounded-[2rem] p-6 sm:p-8 text-white shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden flex flex-col flex-1 ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-slate-950' : ''}`}>
+                      <div key={card.id} className="relative group perspective-1000">
+                        <div className={`${card.color || GRADIENTS[0]} rounded-[2rem] p-8 text-white shadow-xl hover:shadow-2xl transition-all duration-300 aspect-[1.58/1] flex flex-col justify-between relative overflow-hidden ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-slate-950' : ''}`}>
                           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-                          
-                          {/* UX Fix: Moved Edit & Delete to top right with clear spacing */}
-                          <div className="absolute top-4 right-4 flex gap-3 z-20">
-                            <button onClick={() => startEditCard(card)} className="p-2.5 bg-white/20 hover:bg-white/40 rounded-full backdrop-blur-md transition-colors shadow-sm"><Edit2 size={16} /></button>
-                            <button onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 bg-black/20 hover:bg-red-500/80 rounded-full backdrop-blur-md transition-colors text-white shadow-sm"><Trash2 size={16} /></button>
-                          </div>
-
-                          <div className="flex-1 relative z-10 mt-12 sm:mt-8">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-bold text-2xl tracking-tight">{card.name}</h3>
+                          <div className="flex justify-between items-start gap-3 relative z-10">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap"><h3 className="font-bold text-2xl tracking-tight">{card.name}</h3><span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border border-white/20">{progData.name}</span></div>
+                              <div className={`flex items-center gap-2 text-xs font-medium uppercase tracking-wider ${isExpiringSoon ? 'text-orange-200 font-bold' : 'text-white/80'}`}><ruleData.icon size={14} /> {ruleData.label}{card.ruleType === 'expires' && card.expiryDate && ` • ${new Date(card.expiryDate).toLocaleDateString()}`}{isExpiringSoon && ' (EXPIRING!)'}</div>
                             </div>
-                            <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border border-white/20 inline-block mb-3">{progData.name}</span>
-                            <div className={`flex items-center gap-2 text-xs font-medium uppercase tracking-wider ${isExpiringSoon ? 'text-orange-200 font-bold' : 'text-white/80'}`}>
-                              <ruleData.icon size={14} /> {ruleData.label}
-                              {card.ruleType === 'expires' && card.expiryDate && ` • ${new Date(card.expiryDate).toLocaleDateString()}`}
-                              {isExpiringSoon && ' (EXPIRING!)'}
+                            <div className="shrink-0 flex flex-col items-end gap-2 pt-0.5">
+                              <span className="text-[9px] font-bold uppercase tracking-widest text-white/50 hidden sm:block">Card</span>
+                              <div className="flex items-center gap-1.5 rounded-xl bg-black/25 border border-white/15 p-1">
+                                <button type="button" title="Edit card" onClick={() => startEditCard(card)} className="p-2.5 hover:bg-white/15 rounded-lg transition-colors"><Edit2 size={17} /></button>
+                                <span className="w-px h-5 bg-white/20" aria-hidden />
+                                <button type="button" title="Delete card" onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 hover:bg-red-500/40 rounded-lg transition-colors text-red-100"><Trash2 size={17} /></button>
+                              </div>
                             </div>
                           </div>
-
-                          <div className="relative z-10 mt-8">
-                            <div className="flex justify-between items-end mb-4">
-                              <div>
-                                <div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Available</div>
-                                <div className="text-4xl font-black font-mono tracking-tight">₪{card.remaining.toLocaleString()}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Total Limit</div>
-                                <div className="text-lg font-bold">₪{parseFloat(card.balance).toLocaleString()}</div>
-                              </div>
+                          <div className="relative z-10">
+                            <div className="flex justify-between items-end mb-3">
+                              <div><div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Available</div><div className="text-4xl font-black font-mono tracking-tight">₪{card.remaining.toLocaleString()}</div></div>
+                              <div className="text-right"><div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Total Limit</div><div className="text-lg font-bold">₪{parseFloat(card.balance).toLocaleString()}</div></div>
                             </div>
-                            <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden backdrop-blur-sm mb-6">
-                              <div className="bg-white h-full rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${percentRemaining}%` }}>
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/50 animate-[shimmer_2s_infinite]"></div>
-                              </div>
-                            </div>
-                            
-                            {/* UX Fix: Full-width clear Quick Spend button */}
-                            <button onClick={() => startQuickExpense(card.id)} className="w-full bg-white/10 hover:bg-emerald-400 hover:text-white border border-white/20 p-3.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 font-bold group/btn active:scale-[0.98]">
-                              <Zap size={18} className="fill-current group-hover/btn:animate-pulse" /> Log Purchase
-                            </button>
+                            <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden backdrop-blur-sm mb-4"><div className="bg-white h-full rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${percentRemaining}%` }}><div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/50 animate-[shimmer_2s_infinite]"></div></div></div>
+                            <button type="button" onClick={() => startQuickExpense(card.id)} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-slate-900 font-bold text-sm uppercase tracking-wide shadow-lg hover:bg-emerald-400 hover:text-white transition-colors"><Zap size={18} className="fill-current shrink-0" /><span>Quick spend</span></button>
                           </div>
                         </div>
                         <div className="px-4 py-4 flex flex-wrap gap-2">{card.derivedCats.map((cat) => (<span key={cat} className="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-1.5">{CATEGORY_ICONS[cat]} {cat}</span>))}</div>
@@ -1034,7 +982,6 @@ Your response must follow this natural structure (use bold text for emphasis):
                     {sortedExpenses.map((expense) => {
                       const sourceCard = cards.find((c) => c.id === expense.cardId);
                       const progColor = sourceCard ? (PROGRAMS[sourceCard.programId || 'CUSTOM'] || PROGRAMS.CUSTOM).color : 'bg-slate-200';
-                      const expDate = new Date(expense.date || expense.updatedAt);
                       return (
                         <div key={expense.id} className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors group ${expense.isCompleted ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
                           <div className="flex items-center gap-4 sm:gap-5">
@@ -1042,9 +989,18 @@ Your response must follow this natural structure (use bold text for emphasis):
                             <div>
                               <div className={`font-bold text-base sm:text-lg mb-1 flex flex-wrap items-center gap-2 ${expense.isCompleted ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
                                 {expense.name}
+                                {expense.scheduledFor && (() => {
+                                  const d = new Date(expense.scheduledFor);
+                                  const isFuture = d > new Date();
+                                  return (
+                                    <span className={`text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${isFuture ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                      {isFuture ? 'Planned ' : ''}{d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </span>
+                                  );
+                                })()}
                                 {expense.merchantName && <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1"><MerchantIcon merchantName={expense.merchantName} category={expense.category} className="w-4 h-4 rounded-sm border-0" />{expense.merchantName.split('(')[0].trim()}</span>}
                               </div>
-                              <div className="flex flex-wrap items-center gap-2 text-xs"><span className="font-medium text-slate-500">{CATEGORY_ICONS[expense.category]} {expense.category}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-medium text-slate-500">{expDate.toLocaleDateString()}</span></div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs"><span className="font-medium text-slate-500">{CATEGORY_ICONS[expense.category]} {expense.category}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span></div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-16 sm:pl-0">
@@ -1067,9 +1023,85 @@ Your response must follow this natural structure (use bold text for emphasis):
           {activeTab === 'insights' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Merchant Search</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Find out exactly which cards & discounts to use at the checkout counter.</p></div>
+
+              {cardBalances.length > 0 && uniqueCoverageCategories.length > 0 && (
+                <div className="rounded-[2rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-none overflow-hidden">
+                  <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:from-slate-800/50 dark:to-emerald-950/20">
+                    <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Broad Category Coverage</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">See which wallet cards support each shopping category. On small screens, categories stack; on larger screens, use the matrix with horizontal scroll if you have many cards.</p>
+                  </div>
+                  <div className="p-4 sm:p-6">
+                    <div className="sm:hidden space-y-4">
+                      {uniqueCoverageCategories.map((category) => {
+                        const supporting = cardBalances.filter((c) => (c.derivedCats || []).includes(category));
+                        return (
+                          <div key={category} className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3 font-bold text-slate-800 dark:text-slate-100">
+                              <span className="text-xl" aria-hidden>{CATEGORY_ICONS[category] || '🏷️'}</span>
+                              <span className="leading-tight text-sm sm:text-base">{category}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {supporting.length === 0 ? (
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-700/50 px-2.5 py-1 rounded-full">No coverage</span>
+                              ) : (
+                                supporting.map((c) => (
+                                  <span key={c.id} className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 border border-emerald-200/80 dark:border-emerald-800/60 px-2.5 py-1 rounded-full">{c.name}</span>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="hidden sm:block overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+                      <table className="min-w-[800px] w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-slate-100 dark:bg-slate-800/80">
+                            <th scope="col" className="sticky left-0 z-30 px-4 py-3 text-left font-bold text-slate-700 dark:text-slate-200 border-b border-r border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 min-w-[200px] shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.4)]">Coverage Areas</th>
+                            {cardBalances.map((card) => {
+                              const prog = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
+                              return (
+                                <th key={card.id} scope="col" className="px-3 py-3 text-center font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 align-bottom min-w-[120px]">
+                                  <div className="flex flex-col items-center gap-1.5">
+                                    <span className={`h-3 w-3 rounded-full shrink-0 ring-2 ring-white/30 shadow-sm ${card.color || GRADIENTS[0]}`} title="" aria-hidden />
+                                    <span className="text-xs sm:text-sm leading-tight">{card.name}</span>
+                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 max-w-[140px] truncate">{prog.name}</span>
+                                  </div>
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {uniqueCoverageCategories.map((category) => (
+                            <tr key={category} className="group border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50/90 dark:hover:bg-slate-800/40 transition-colors">
+                              <th scope="row" className="sticky left-0 z-20 px-4 py-3 text-left font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-100 dark:border-slate-800 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.35)]">
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="text-lg" aria-hidden>{CATEGORY_ICONS[category] || '🏷️'}</span>
+                                  <span className="leading-tight">{category}</span>
+                                </span>
+                              </th>
+                              {cardBalances.map((card) => (
+                                <td key={`${category}-${card.id}`} className="p-2 text-center align-middle border-l border-slate-50 dark:border-slate-800/50">
+                                  {(card.derivedCats || []).includes(category) ? (
+                                    <div className="flex justify-center"><CheckCircle2 className="text-emerald-500 dark:text-emerald-400" size={22} strokeWidth={2.25} aria-label="Covered" /></div>
+                                  ) : (
+                                    <div className="flex justify-center"><span className="block w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-600" aria-hidden /></div>
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[2rem] p-6 sm:p-8 shadow-xl text-white">
                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Search size={24} /> Where are you paying?</h3>
-                <input type="text" value={insightSearch} onChange={(e) => setInsightSearch(e.target.value)} placeholder="e.g. Zara, Pizza, Cinema, COMY..." className="w-full pl-5 pr-12 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/60 focus:ring-4 focus:ring-white/30 outline-none font-medium text-lg transition-all" />
+                <input type="text" value={insightSearch} onChange={(e) => setInsightSearch(e.target.value)} placeholder="e.g. Zara, Pizza, Cinema, ASOS..." className="w-full pl-5 pr-12 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/60 focus:ring-4 focus:ring-white/30 outline-none font-medium text-lg transition-all" />
                 {insightSearch && (
                   <div className="mt-6 space-y-4">
                     {(() => {
@@ -1077,7 +1109,7 @@ Your response must follow this natural structure (use bold text for emphasis):
                       if (matches.length === 0) return <div className="text-white/80 font-medium bg-white/10 p-4 rounded-2xl border border-white/20">Merchant not found in official database. Generic category rules will apply.</div>;
                       return matches.map(([searchMatch, mData]) => {
                         const acceptedCards = sortedCardBalances.filter((c) => checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
-                        const merchantDeals = allDiscountsData.filter((d) => d.m === searchMatch && userClubs.includes(d.c));
+                        const merchantDeals = DISCOUNTS_DATA.filter((d) => d.m === searchMatch && userClubs.includes(d.c));
                         return (
                           <div key={searchMatch} className="animate-in slide-in-from-bottom-2 fade-in bg-white/10 p-5 rounded-2xl border border-white/20 shadow-md">
                             <div className="flex items-center gap-3 mb-4"><MerchantIcon merchantName={searchMatch} category={mData.cat} className="w-10 h-10 rounded-full" /><div><div className="text-base sm:text-lg font-bold text-white leading-tight">{searchMatch}</div><div className="text-[10px] sm:text-xs uppercase tracking-widest text-blue-200 mt-0.5">{CATEGORY_ICONS[mData.cat]} {mData.cat}</div></div></div>
@@ -1111,91 +1143,6 @@ Your response must follow this natural structure (use bold text for emphasis):
                   </div>
                 )}
               </div>
-
-              {/* Coverage Matrix Implementation */}
-              <div className="mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div>
-                  <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Wallet Coverage</h2>
-                  <p className="text-slate-500 dark:text-slate-400 mt-1">See exactly which cards work in which shopping categories.</p>
-                </div>
-                
-                <div className="mt-6 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
-                  <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                    <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2"><PieChart size={20}/> Category Matrix</h3>
-                  </div>
-                  
-                  <div className="p-6">
-                    {(() => {
-                      const uniqueCategories = [...new Set(cardBalances.flatMap(c => c.derivedCats || []))].sort();
-                      if (uniqueCategories.length === 0) return <div className="text-slate-500 dark:text-slate-400 text-center py-8">No coverage data. Add some cards first!</div>;
-
-                      return (
-                        <>
-                          {/* Mobile Layout */}
-                          <div className="sm:hidden space-y-4">
-                            {uniqueCategories.map(cat => (
-                              <div key={cat} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                <div className="font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
-                                  <span>{CATEGORY_ICONS[cat]}</span> {cat}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {cardBalances.filter(c => c.derivedCats.includes(cat)).map(c => (
-                                    <span key={c.id} className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm">
-                                      {c.name}
-                                    </span>
-                                  ))}
-                                  {cardBalances.filter(c => c.derivedCats.includes(cat)).length === 0 && (
-                                    <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl">No Coverage</span>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Desktop Layout */}
-                          <div className="hidden sm:block overflow-x-auto pb-4">
-                            <table className="w-full min-w-[800px] border-collapse">
-                              <thead>
-                                <tr>
-                                  <th className="sticky left-0 bg-white dark:bg-slate-900 p-4 text-left font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-xs border-b border-slate-200 dark:border-slate-700 z-10 w-48 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Coverage Areas</th>
-                                  {cardBalances.map(card => (
-                                    <th key={card.id} className="p-4 text-center border-b border-slate-200 dark:border-slate-700">
-                                      <div className="flex flex-col items-center gap-1">
-                                        <div className={`w-3 h-3 rounded-full ${PROGRAMS[card.programId || 'CUSTOM']?.color || 'bg-slate-500'}`}></div>
-                                        <div className="font-bold text-slate-800 dark:text-slate-200 text-sm whitespace-nowrap">{card.name}</div>
-                                        <div className="text-[9px] text-slate-400 uppercase tracking-widest">{PROGRAMS[card.programId || 'CUSTOM']?.name}</div>
-                                      </div>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                {uniqueCategories.map(cat => (
-                                  <tr key={cat} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                    <td className="sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/30 p-4 font-semibold text-slate-700 dark:text-slate-300 text-sm flex items-center gap-2 whitespace-nowrap border-r border-slate-100 dark:border-slate-800/50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                      <span>{CATEGORY_ICONS[cat]}</span> {cat}
-                                    </td>
-                                    {cardBalances.map(card => (
-                                      <td key={card.id} className="p-4 text-center">
-                                        {card.derivedCats.includes(cat) ? (
-                                          <CheckCircle2 className="mx-auto text-emerald-500 dark:text-emerald-400" size={20} />
-                                        ) : (
-                                          <div className="w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto"></div>
-                                        )}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-
             </div>
           )}
 
@@ -1211,23 +1158,23 @@ Your response must follow this natural structure (use bold text for emphasis):
               </div>
               <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                  <div className="relative max-w-md"><Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} /><input type="text" value={clubSearch} onChange={(e) => setClubSearch(e.target.value)} placeholder="Search discounts (e.g. Pizza, FOX, COMY)..." className="w-full pl-10 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" /></div>
+                  <div className="relative max-w-md"><Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} /><input type="text" value={clubSearch} onChange={(e) => setClubSearch(e.target.value)} placeholder="Search discounts (e.g. Pizza, FOX)..." className="w-full pl-10 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" /></div>
                 </div>
                 <div className="p-6">
                   {userClubs.length === 0 ? (
                     <div className="text-center p-8"><Gift size={48} className="mx-auto mb-4 text-slate-200 dark:text-slate-800" /><p className="text-slate-500 font-medium">Select a club above to see your available deals.</p></div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {allDiscountsData.filter((d) => {
+                      {DISCOUNTS_DATA.filter((d) => {
                         if (!userClubs.includes(d.c)) return false;
                         if (!clubSearch) return true;
                         const qs = clubSearch.toLowerCase();
-                        const cat = dynamicMerchants[d.m]?.cat || "";
+                        const cat = KNOWN_MERCHANTS[d.m]?.cat || "";
                         const catAliases = CATEGORY_ALIASES[cat] || [];
                         return d.m.toLowerCase().includes(qs) || d.d.toLowerCase().includes(qs) || cat.toLowerCase().includes(qs) || catAliases.some((a) => a.includes(qs));
-                      }).slice(0, 50).map((deal, idx) => ( // Sliced to 50 so React doesn't freeze rendering 4000 rows at once
+                      }).map((deal, idx) => (
                         <div key={idx} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                          <MerchantIcon merchantName={deal.m} category={dynamicMerchants[deal.m]?.cat} className="w-12 h-12 rounded-lg" />
+                          <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat} className="w-12 h-12 rounded-lg" />
                           <div><div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">{deal.m.split('(')[0].trim()}<span className={`text-[9px] px-1.5 py-0.5 rounded text-white ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span></div><div className="text-sm font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{deal.d}</div></div>
                         </div>
                       ))}
@@ -1243,7 +1190,7 @@ Your response must follow this natural structure (use bold text for emphasis):
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[80vh] flex flex-col">
               <div className="flex justify-between items-end">
                 <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Assistant</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Ask me what to buy, and I'll find the best deal.</p></div>
-                <button onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); setAiMessages([{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה. אז תכלס, על מה אנחנו חוסכים עכשיו?' }]); setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
+                <button onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); setAiMessages([{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }]); setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
               </div>
               <div className="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
@@ -1370,68 +1317,76 @@ Your response must follow this natural structure (use bold text for emphasis):
                 </select>
               </div>
             </div>
-            
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Plan for month (optional)</label>
+              <input type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value, cardId: '' })} className="w-full sm:w-64 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">Pick a date in the month you intend to pay. <strong className="font-semibold text-slate-600 dark:text-slate-300">Monthly</strong> cards count spending per calendar month and refill on the 1st; future dates let you plan against that month&apos;s balance.</p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Purchase Date (For Planning)</label>
-                <input type="date" required value={newExpense.date || new Date().toISOString().split('T')[0]} onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" />
-              </div>
-              
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Estimated Cost (₪)</label>
                 <input type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value, cardId: '' })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-mono font-bold text-lg text-emerald-600 dark:text-emerald-400" placeholder="0.00" />
                 {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-white border-slate-300" /><label htmlFor="isManualSplit" className="text-xs font-semibold text-slate-500 dark:text-slate-400 cursor-pointer">Split this payment across multiple cards?</label></div>}
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
-              <select required disabled={!newExpense.category} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
-                <option value="" disabled>{!newExpense.category ? 'Awaiting category...' : '-- Evaluated Cards --'}</option>
-                {sortedCardBalances.map((card) => {
-                  if (!newExpense.category) return null;
-                  const compatibility = checkCompatibility(card, newExpense.category, newExpense.merchantName);
-                  const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
-                  const canAfford = isEditingCurrent || card.remaining >= parseFloat(newExpense.amount || 0);
-                  const isAllowedByRules = compatibility.allowed;
-                  
-                  // Monthly cards can plan future purchases even if balance is currently 0, assuming refill
-                  let isSelectable = false;
-                  if (isAllowedByRules) {
-                    if (card.remaining > 0) isSelectable = true;
-                    if (card.ruleType === 'monthly') isSelectable = true; 
-                  }
-                  
-                  const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
-                  const monthlyTag = card.ruleType === 'monthly' ? ` (Monthly Total Limit: ₪${card.balance})` : '';
-                  
-                  return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Current Available: ₪{card.remaining.toLocaleString()}){monthlyTag} {!isAllowedByRules ? '- Rule Blocked' : (!canAfford && card.ruleType !== 'monthly' ? '- Requires Split' : '')}</option>;
-                })}
-              </select>
-              {newExpense.category && cardBalances.filter((c) => checkCompatibility(c, newExpense.category, newExpense.merchantName).allowed).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this merchant/category.</p>}
-            </div>
-
-            {newExpense.isManualSplit && !editingExpenseId && newExpense.cardId && (
-              <div className="animate-in fade-in slide-in-from-top-2 bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50">
-                <label className="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-2">Amount to charge to selected card (₪)</label>
-                <input type="number" required min="0.01" max={Math.min(parseFloat(newExpense.amount || Infinity), cardBalances.find((c) => c.id === newExpense.cardId)?.remaining || Infinity)} step="0.01" value={newExpense.chargeAmount} onChange={(e) => setNewExpense({ ...newExpense, chargeAmount: e.target.value })} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono font-bold text-lg" placeholder="0.00" />
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
+                <select required disabled={!newExpense.category} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
+                  <option value="" disabled>{!newExpense.category ? 'Awaiting category...' : '-- Evaluated Cards --'}</option>
+                  {sortedCardBalances.map((card) => {
+                    if (!newExpense.category) return null;
+                    const compatibility = checkCompatibility(card, newExpense.category, newExpense.merchantName);
+                    const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
+                    const targetMonthKey = newExpense.scheduledFor
+                      ? getCalendarMonthKey(newExpense.scheduledFor)
+                      : getCalendarMonthKey(new Date());
+                    const editingExpenseRow = editingExpenseId ? expenses.find((ex) => ex.id === editingExpenseId) : null;
+                    let rem = getRemainingForCardMonth(card, targetMonthKey);
+                    if (editingExpenseRow && editingExpenseRow.cardId === card.id) {
+                      const oldBucket = getExpenseMonthKey(editingExpenseRow);
+                      if (card.ruleType !== 'monthly' || oldBucket === targetMonthKey) {
+                        rem += parseFloat(editingExpenseRow.amount || 0);
+                      }
+                    }
+                    const canAfford = isEditingCurrent || rem >= parseFloat(newExpense.amount || 0);
+                    const isAllowedByRules = compatibility.allowed;
+                    const isSelectable = isAllowedByRules && (rem > 0 || isEditingCurrent);
+                    const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
+                    return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Available: ₪{rem.toLocaleString()}) {!isAllowedByRules ? '- Rule Blocked' : (!canAfford ? '- Requires Split' : '')}</option>;
+                  })}
+                </select>
+                {newExpense.category && cardBalances.filter((c) => checkCompatibility(c, newExpense.category, newExpense.merchantName).allowed).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this merchant/category.</p>}
               </div>
-            )}
+            </div>
+
+            {newExpense.isManualSplit && !editingExpenseId && newExpense.cardId && (() => {
+              const splitCard = cardBalances.find((c) => c.id === newExpense.cardId);
+              const splitMonthKey = newExpense.scheduledFor
+                ? getCalendarMonthKey(newExpense.scheduledFor)
+                : getCalendarMonthKey(new Date());
+              const splitCap = splitCard ? getRemainingForCardMonth(splitCard, splitMonthKey) : 0;
+              return (
+                <div className="animate-in fade-in slide-in-from-top-2 bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                  <label className="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-2">Amount to charge to selected card (₪)</label>
+                  <input type="number" required min="0.01" max={Math.min(parseFloat(newExpense.amount || Infinity), splitCap || Infinity)} step="0.01" value={newExpense.chargeAmount} onChange={(e) => setNewExpense({ ...newExpense, chargeAmount: e.target.value })} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono font-bold text-lg" placeholder="0.00" />
+                </div>
+              );
+            })()}
 
             <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
               {(() => {
                 const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
+                const planMonthKey = newExpense.scheduledFor
+                  ? getCalendarMonthKey(newExpense.scheduledFor)
+                  : getCalendarMonthKey(new Date());
+                const planRemaining = selectedCard ? getRemainingForCardMonth(selectedCard, planMonthKey) : 0;
                 const reqAmount = parseFloat(newExpense.amount || 0);
                 let actualLogAmount = reqAmount;
                 let isSplitNeeded = false;
                 if (selectedCard && !editingExpenseId) {
                   if (newExpense.isManualSplit && newExpense.chargeAmount) actualLogAmount = parseFloat(newExpense.chargeAmount || 0);
-                  
-                  // Don't force split on monthly cards since they refill
-                  if (actualLogAmount > selectedCard.remaining && selectedCard.ruleType !== 'monthly') {
-                      actualLogAmount = selectedCard.remaining;
-                  }
-                  
+                  if (actualLogAmount > planRemaining) actualLogAmount = planRemaining;
                   if (actualLogAmount < reqAmount && actualLogAmount > 0) isSplitNeeded = true;
                 }
                 return <button type="submit" className={`w-full text-white font-bold py-4 rounded-xl transition-all shadow-lg hover:shadow-xl active:scale-[0.98] text-lg ${isSplitNeeded ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{isSplitNeeded ? `Split Payment (Log ₪${actualLogAmount} & Continue)` : (editingExpenseId ? 'Update Purchase' : 'Confirm Plan')}</button>;
