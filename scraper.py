@@ -16,17 +16,24 @@ from dotenv import load_dotenv
 # 1. CONFIGURATION & INITIALIZATION
 # ==========================================
 
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 FIREBASE_KEY_PATH = r"C:\Users\iamam\OneDrive\Desktop\cardsdeven-firebase-adminsdk-fbsvc-dac77be72f.json"
-BEHATSDAA_ID = "REMOVED_SET_BEHATSDAA_ID_IN_ENV"
 DATABASE_URL = 'REMOVED_FIREBASE_DATABASE_URL'
 
-# Use the API key from your React app for the embeddings
-# Load hidden variables from .env
-load_dotenv("cardsdeven/.env")
-# Securely fetch the key
+# Load .env from repo root and from cardsdeven/ (GEMINI_API_KEY, BEHATSDAA_ID, etc.)
+load_dotenv(os.path.join(_REPO_ROOT, '.env'))
+load_dotenv(os.path.join(_REPO_ROOT, 'cardsdeven', '.env'))
+
+BEHATSDAA_ID = os.environ.get('BEHATSDAA_ID', '').strip()
+if not BEHATSDAA_ID:
+    raise ValueError(
+        'BEHATSDAA_ID is not set. Add it to .env or cardsdeven/.env, '
+        'or export it in the shell (GitHub Actions: repository secret BEHATSDAA_ID).'
+    )
+
 api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    raise ValueError("GEMINI_API_KEY not found! Make sure .env is in the root folder.")
+    raise ValueError("GEMINI_API_KEY not found! Set it in .env or cardsdeven/.env.")
 client = genai.Client(api_key=api_key)
 
 if not firebase_admin._apps:
