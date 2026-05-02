@@ -801,6 +801,51 @@ const renderChatText = (text) => {
 const AI_CHAT_STORAGE_KEY = 'cardsdeven_ai_chat_v1';
 const DEFAULT_AI_WELCOME_TEXT = 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎';
 
+/** Random epigraph while the model is typing (Office, HIMYM, Modern Family). */
+const AI_LOADER_QUOTES = [
+  'Would I rather be feared or loved? Easy. Both. I want people to be afraid of how much they love me. M.Scott',
+  "I'm not superstitious, but I am a little stitious. M.Scott",
+  "That's what she said. M.Scott",
+  'Identity theft is not a joke, Jim! Millions of families suffer every year. D.Schrute',
+  'I just want to lie on the beach and eat hot dogs. K.Malone',
+  'Bears. Beets. Battlestar Galactica. J.Halpert',
+  "Sometimes I'll start a sentence and I don't even know where it's going. I just hope I find it along the way. M.Scott",
+  'I am Beyoncé, always. M.Scott',
+  'I am running away from my responsibilities. And it feels good. M.Scott',
+  'I talk a lot, so I\'ve learned to just tune myself out. K.Kapoor',
+  'Sometimes the clothes at Gap Kids are too flashy, so I’m forced to go to the American Girl store and order clothes for large colonial dolls. A.Martin',
+  'I declare bankruptcy! M.Scott',
+  'The worst thing about prison was the dementors. M.Scott',
+  "I'm an early bird and I'm a night owl. So I'm wise and I have worms. M.Scott",
+  "I miss the days when there was only one party I didn't want to go to. R.Howard",
+  'Legen—wait for it—dary! B.Stinson',
+  'Suit up! B.Stinson',
+  "Whenever I'm sad, I stop being sad and be awesome instead. B.Stinson",
+  "You can't cling to the past. Because no matter how tightly you hold on, it's already gone. T.Mosby",
+  "If you're not scared, you're not taking a chance, and if you're not taking a chance, then what the hell are you doing? T.Mosby",
+  "Because sometimes even if you know how something's gonna end, that doesn't mean you can't enjoy the ride. T.Mosby",
+  'And that, kids, is how I met your mother. T.Mosby',
+  "If I ask you to change too many things about yourself, you're not gonna be the man I fell in love with. R.Scherbatsky",
+  "Nothing good happens after 2:00 A.M. T.Mosby",
+  'Have you met Ted? B.Stinson',
+  'It’s only once you’ve stopped that you realize how hard it is to start again. T.Mosby',
+  "The great moments of your life won't necessarily be the things you do; they'll also be the things that happen to you. T.Mosby",
+  "Whatever you do in this life, it's not legendary unless your friends are there to see it. B.Stinson",
+  'We struggle so hard to hold on to these things that we know are gonna disappear eventually. L.Aldrin',
+  'Challenge accepted! B.Stinson',
+  "I'm the cool dad. That's my thing. I'm hip. I surf the Web. I text. LOL. P.Dunphy",
+  "I've always said that if my son thinks of me as one of his idiot friends, I've succeeded as a dad. P.Dunphy",
+  "The iPad comes out on my actual birthday. It's like Steve Jobs and God got together to say, 'We love you, Phil.' P.Dunphy",
+  "When life gives you lemonade, make lemons. Life will be all like 'Whaaaat?!' P.Dunphy",
+  'Success is 1% inspiration, 98% perspiration, and 2% attention to detail. P.Dunphy',
+  "Always look people in the eye, even if they're blind. Just say 'I'm looking you in the eye, but it doesn't seem to be doing much.' P.Dunphy",
+  'When in doubt, dance it out. It\'s scientifically proven to make everything better. P.Dunphy',
+  'Watch a sunrise at least once a day. P.Dunphy',
+  'If you want to be truly happy in life, surround yourself with people who make you laugh. And also, people who bring snacks. P.Dunphy',
+  "I always felt bad for people with emotionally distant fathers. It turns out I'm one of them. It's a miracle I didn't end up a stripper. P.Dunphy",
+  'We had no more dishes, so we were eating cereal out of a goldfish bowl. P.Dunphy',
+];
+
 function loadAiChatFromStorage() {
   try {
     if (typeof localStorage === 'undefined') return null;
@@ -813,6 +858,28 @@ function loadAiChatFromStorage() {
   } catch {
     return null;
   }
+}
+
+function HamsterWheelLoader() {
+  return (
+    <div className="wheel-and-hamster" aria-label="Loading assistant" role="status">
+      <div className="wheel" aria-hidden />
+      <div className="hamster">
+        <div className="hamster__body" />
+        <div className="hamster__head">
+          <div className="hamster__ear" />
+          <div className="hamster__eye" />
+          <div className="hamster__nose" />
+        </div>
+        <div className="hamster__limb hamster__limb--fr" />
+        <div className="hamster__limb hamster__limb--fl" />
+        <div className="hamster__limb hamster__limb--br" />
+        <div className="hamster__limb hamster__limb--bl" />
+        <div className="hamster__tail" />
+      </div>
+      <div className="spoke" aria-hidden />
+    </div>
+  );
 }
 
 const RULE_TYPES = {
@@ -868,6 +935,7 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState(() => loadAiChatFromStorage() ?? [{ role: 'model', text: DEFAULT_AI_WELCOME_TEXT }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [aiLoadingQuote, setAiLoadingQuote] = useState('');
   const chatEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const aiRequestInFlightRef = useRef(false);
@@ -1088,6 +1156,7 @@ export default function App() {
     const newMessages = [...aiMessages, { role: 'user', text: userText }];
     setAiMessages(newMessages);
     setAiInput('');
+    setAiLoadingQuote(AI_LOADER_QUOTES[Math.floor(Math.random() * AI_LOADER_QUOTES.length)]);
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
     const priorUserTexts = aiMessages.filter((m) => m.role === 'user').slice(-2).map((m) => m.text);
@@ -1698,38 +1767,79 @@ USER'S DATA:
             </div>
           )}
 
-          {/* AI */}
+          {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[80vh] flex flex-col">
-              <div className="flex justify-between items-end">
-                <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Assistant</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Ask me what to buy, and I'll find the best deal.</p></div>
-                <button type="button" onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }]; setAiMessages(fresh); try { localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh)); } catch { /* ignore */ } setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
-              </div>
-              <div className="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
-                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
-                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                    Tip: ask with budget + item + area for better combo precision.
-                  </p>
+            <div className="ai-chat-brutalist space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[80vh] flex flex-col text-left">
+              <div className="ai-brutalist-header-row">
+                <div>
+                  <h2 className="ai-brutalist-title">SMART ASSISTANT</h2>
+                  <p className="ai-brutalist-sub">Ask what to buy — I’ll match clubs + wallet.</p>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/60 dark:bg-slate-950/40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (abortControllerRef.current) abortControllerRef.current.abort();
+                    const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }];
+                    setAiMessages(fresh);
+                    try { localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh)); } catch { /* ignore */ }
+                    setIsAiTyping(false);
+                  }}
+                  className="ai-brutalist-clear"
+                  title="Clear Chat History"
+                >
+                  <Trash2 size={20} className="text-slate-900" />
+                </button>
+              </div>
+              <div className="ai-brutalist-shell min-h-0">
+                <div className="ai-brutalist-tip">TIP: Budget + item + area = sharper combos.</div>
+                <div className="ai-brutalist-scroll space-y-4">
                   {aiMessages.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'model' && <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mr-3 mt-1 shadow-sm"><Bot size={16} className="text-blue-600 dark:text-blue-400" /></div>}
-                      <div className={`max-w-[88%] sm:max-w-[76%] p-4 rounded-2xl shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-sm text-left' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-200 dark:border-slate-700/50 leading-relaxed text-right'}`} dir={msg.role === 'model' ? "rtl" : "auto"}>
-                        <div className={`text-[10px] uppercase tracking-wider mb-1.5 ${msg.role === 'user' ? 'text-blue-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                          {msg.role === 'user' ? 'You' : 'Advisor'}
+                      {msg.role === 'model' && (
+                        <div className="ai-brutalist-avatar">
+                          <Bot size={16} className="text-slate-900" aria-hidden />
                         </div>
-                        <div className="whitespace-pre-wrap break-words" dir="auto">{renderChatText(msg.text)}</div>
+                      )}
+                      <div
+                        className={`ai-brutalist-bubble whitespace-pre-wrap break-words ${msg.role === 'user' ? 'ai-brutalist-bubble--user text-left' : 'ai-brutalist-bubble--model text-right'}`}
+                        dir={msg.role === 'model' ? 'rtl' : 'auto'}
+                      >
+                        <div className="ai-brutalist-meta">{msg.role === 'user' ? 'You' : 'Advisor'}</div>
+                        <div dir="auto">{renderChatText(msg.text)}</div>
                       </div>
                     </div>
                   ))}
-                  {isAiTyping && <div className="flex justify-start"><div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mr-3 mt-1"><Bot size={16} className="text-blue-600 dark:text-blue-400" /></div><div className="bg-white dark:bg-slate-800 p-4 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700/50 shadow-sm"><Loader2 className="animate-spin text-slate-400" size={20} /></div></div>}
+                  {isAiTyping && (
+                    <div className="flex justify-start items-start gap-2">
+                      <div className="ai-brutalist-avatar">
+                        <Bot size={16} className="text-slate-900 opacity-50" aria-hidden />
+                      </div>
+                      <div className="ai-loader-card">
+                        <HamsterWheelLoader />
+                        {aiLoadingQuote && <p className="ai-loader-quote">{aiLoadingQuote}</p>}
+                      </div>
+                    </div>
+                  )}
                   <div ref={chatEndRef} />
                 </div>
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
-                  <form onSubmit={handleSendAI} className="relative flex items-center">
-                    <input type="text" value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="e.g. I need to buy pizza for 10 people..." disabled={isAiTyping} className="w-full pl-4 pr-14 py-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm disabled:opacity-70" />
-                    <button type="submit" disabled={!aiInput.trim() || isAiTyping} className="absolute right-2 p-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"><Send size={18} className="ml-0.5" /></button>
+                <div className="ai-brutalist-form-footer">
+                  <form onSubmit={handleSendAI} className="brutalist-container">
+                    <div className="brutalist-input-wrap smooth-type">
+                      <input
+                        id="ai-brutalist-input"
+                        type="text"
+                        value={aiInput}
+                        onChange={(e) => setAiInput(e.target.value)}
+                        placeholder="e.g. I need pizza for 10 people…"
+                        disabled={isAiTyping}
+                        className="brutalist-input"
+                        autoComplete="off"
+                      />
+                      <label htmlFor="ai-brutalist-input" className="brutalist-label">MESSAGE</label>
+                      <button type="submit" disabled={!aiInput.trim() || isAiTyping} className="brutalist-send-btn" aria-label="Send">
+                        <Send size={18} />
+                      </button>
+                    </div>
                   </form>
                 </div>
               </div>
