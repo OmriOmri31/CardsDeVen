@@ -989,19 +989,27 @@ function renderAdvisorMessage(text, lang) {
 }
 
 function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient }) {
-  const short = programName.length > 22 ? `${programName.slice(0, 21)}…` : programName;
   return (
     <div className="wallet-credit-card-wrap wallet-credit-card-wrap--lg-scale">
       <div className="wallet-credit-card" style={{ '--wcc-bg': chromeGradient }}>
-        <div className="wcc-chip" aria-hidden />
-        <div className="wcc-contactless" aria-hidden />
-        <div className="wcc-program" title={programName}>{short}</div>
-        <div className="wcc-mc" aria-hidden>
-          <span className="wcc-mc-circle wcc-mc-circle--red" />
-          <span className="wcc-mc-circle wcc-mc-circle--orange" />
+        <div className="wcc-top-row">
+          <div className="wcc-chip" aria-hidden />
+          <div className="wcc-top-right">
+            <div className="wcc-contactless" aria-hidden />
+            <div className="wcc-mc" aria-hidden>
+              <span className="wcc-mc-circle wcc-mc-circle--red" />
+              <span className="wcc-mc-circle wcc-mc-circle--orange" />
+            </div>
+          </div>
         </div>
-        <div className="wcc-original">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
-        <div className="wcc-current">₪{balanceRemaining.toLocaleString()}</div>
+        <div className="wcc-program" title={programName}>{programName}</div>
+        <div className="wcc-amounts">
+          <div className="wcc-original">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
+          <div className="wcc-current-block">
+            <span className="wcc-current-label">Remaining</span>
+            <div className="wcc-current">₪{balanceRemaining.toLocaleString()}</div>
+          </div>
+        </div>
       </div>
     </div>
   );
