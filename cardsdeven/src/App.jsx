@@ -606,6 +606,40 @@ const checkCompatibility = (card, category, merchantName) => {
   return { allowed: false, reason: "Unknown compatibility" };
 };
 
+/** Card must satisfy every selected merchant (with its catalog category) and every extra category without a matching merchant. */
+const cardMatchesExpenseSelection = (card, categories, merchants) => {
+  const cats = [...new Set((categories || []).filter(Boolean))];
+  const merchs = [...new Set((merchants || []).filter(Boolean))];
+  if (cats.length === 0) return false;
+  const coveredCats = new Set();
+  for (const m of merchs) {
+    const mdata = KNOWN_MERCHANTS[m];
+    const catForMerchant = mdata?.cat || cats[0];
+    coveredCats.add(catForMerchant);
+    if (!checkCompatibility(card, catForMerchant, m).allowed) return false;
+  }
+  for (const cat of cats) {
+    if (coveredCats.has(cat)) continue;
+    if (!checkCompatibility(card, cat, '').allowed) return false;
+  }
+  return true;
+};
+
+function pickExpenseCardId(cardBalances, categories, merchants, previousCardId, anchorCardId) {
+  if (!categories || categories.length === 0) return '';
+  for (const id of [previousCardId, anchorCardId]) {
+    if (!id) continue;
+    const card = cardBalances.find((c) => c.id === id);
+    if (card && cardMatchesExpenseSelection(card, categories, merchants)) return id;
+  }
+  return '';
+}
+
+const expenseCategoriesForDisplay = (e) =>
+  (Array.isArray(e.expenseCategories) && e.expenseCategories.length ? e.expenseCategories : e.category ? [e.category] : []);
+const expenseMerchantsForDisplay = (e) =>
+  (Array.isArray(e.expenseMerchants) && e.expenseMerchants.length ? e.expenseMerchants : e.merchantName ? [e.merchantName] : []);
+
 const getDerivedCategories = (card) => {
   const pId = card.programId || 'CUSTOM';
   if (pId === 'CUSTOM') return card.categories || [];
@@ -692,6 +726,13 @@ const detectInputLanguage = (text) => {
   return 'he';
 };
 
+/** Visible link text in chat; full URL kept in title for hover/accessibility. */
+function hebrewAnchorLabelForUrl(href) {
+  const u = href.toLowerCase();
+  if (/(hatava|benefit|cal\.co|\/benefit|\/hatava|מועדון|members|club\.|credit-card)/i.test(u)) return 'להטבה';
+  return 'למבצע';
+}
+
 function linkifyTextSegment(segment, keyPrefix) {
   if (!segment) return null;
   const re = /https?:\/\/[^\s\])>'"ֿ\]]+|www\.[^\s\])>'"ֿ\]]+/gi;
@@ -704,17 +745,18 @@ function linkifyTextSegment(segment, keyPrefix) {
       out.push(<React.Fragment key={`${keyPrefix}-t-${partIdx++}`}>{segment.slice(last, m.index)}</React.Fragment>);
     }
     let href = m[0].replace(/[),.;:]+$/g, '');
-    const display = m[0];
     if (href.toLowerCase().startsWith('www.')) href = `https://${href}`;
+    const label = hebrewAnchorLabelForUrl(href);
     out.push(
       <a
         key={`${keyPrefix}-a-${partIdx++}`}
         href={href}
+        title={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="underline text-sky-600 dark:text-sky-400 font-medium break-all"
+        className="underline text-sky-600 dark:text-sky-400 font-medium whitespace-nowrap"
       >
-        {display.replace(/[),.;:]+$/g, '')}
+        {label}
       </a>
     );
     last = m.index + m[0].length;
@@ -819,12 +861,13 @@ export default function App() {
   const chatEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const aiRequestInFlightRef = useRef(false);
+  const quickSpendAnchorCardIdRef = useRef(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
   const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [newExpense, setNewExpense] = useState({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+  const [newExpense, setNewExpense] = useState({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
   const [merchantSearch, setMerchantSearch] = useState('');
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
@@ -1088,7 +1131,13 @@ USER'S DATA:
   };
 
   const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] }); setEditingCardId(null); setShowCardForm(false); };
-  const resetExpenseForm = () => { setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' }); setMerchantSearch(''); setEditingExpenseId(null); setShowExpenseForm(false); };
+  const resetExpenseForm = () => {
+    quickSpendAnchorCardIdRef.current = null;
+    setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+    setMerchantSearch('');
+    setEditingExpenseId(null);
+    setShowExpenseForm(false);
+  };
 
   const handleSaveCard = async (e) => {
     e.preventDefault();
@@ -1107,7 +1156,7 @@ USER'S DATA:
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
-    if (!user || !newExpense.name || !newExpense.amount || !newExpense.category || !newExpense.cardId) return;
+    if (!user || !newExpense.name || !newExpense.amount || !newExpense.expenseCategories?.length || !newExpense.cardId) return;
     const reqAmount = parseFloat(newExpense.amount);
     const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
     const planningMonthKey = newExpense.scheduledFor
@@ -1123,9 +1172,16 @@ USER'S DATA:
       if (saveAmount > planningRemaining) saveAmount = planningRemaining;
       if (saveAmount < reqAmount) isSplit = true;
     }
+    const primaryCat = newExpense.expenseCategories[0];
+    const primaryMerch = newExpense.expenseMerchants[0] || '';
     const expenseData = {
       name: isSplit ? (newExpense.name.includes('(Part') ? newExpense.name : `${newExpense.name} (Part 1)`) : newExpense.name,
-      amount: saveAmount, category: newExpense.category, merchantName: newExpense.merchantName, cardId: newExpense.cardId,
+      amount: saveAmount,
+      category: primaryCat,
+      merchantName: primaryMerch,
+      expenseCategories: newExpense.expenseCategories,
+      expenseMerchants: newExpense.expenseMerchants,
+      cardId: newExpense.cardId,
       isCompleted: newExpense.isCompleted || false,
       scheduledFor: newExpense.scheduledFor ? new Date(`${newExpense.scheduledFor}T12:00:00`).toISOString() : null,
       updatedAt: editingExpenseId ? (newExpense.updatedAt || new Date().toISOString()) : new Date().toISOString()
@@ -1134,11 +1190,17 @@ USER'S DATA:
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'expenses')), expenseData);
     if (isSplit) {
       showToastMsg(`Saved ₪${saveAmount}. Pick next card for remaining ₪${(reqAmount - saveAmount).toFixed(2)}`);
-      setNewExpense((prev) => ({
-        ...prev,
-        name: prev.name.match(/\(Part \d+\)/) ? prev.name.replace(/\(Part (\d+)\)/, (_match, p1) => `(Part ${parseInt(p1, 10) + 1})`) : `${prev.name} (Part 2)`,
-        amount: (reqAmount - saveAmount).toFixed(2), cardId: '', isManualSplit: false, chargeAmount: ''
-      }));
+      setNewExpense((prev) => {
+        const next = {
+          ...prev,
+          name: prev.name.match(/\(Part \d+\)/) ? prev.name.replace(/\(Part (\d+)\)/, (_match, p1) => `(Part ${parseInt(p1, 10) + 1})`) : `${prev.name} (Part 2)`,
+          amount: (reqAmount - saveAmount).toFixed(2),
+          isManualSplit: false,
+          chargeAmount: '',
+        };
+        const cardId = pickExpenseCardId(cardBalances, next.expenseCategories, next.expenseMerchants, '', quickSpendAnchorCardIdRef.current);
+        return { ...next, cardId };
+      });
     } else {
       showToastMsg(editingExpenseId ? 'Update saved' : 'Purchase logged successfully');
       resetExpenseForm();
@@ -1154,24 +1216,66 @@ USER'S DATA:
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
   const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [] }); setEditingCardId(card.id); setShowCardForm(true); };
   const startEditExpense = (expense) => {
+    quickSpendAnchorCardIdRef.current = null;
+    const expenseCategories = expenseCategoriesForDisplay(expense);
+    const expenseMerchants = expenseMerchantsForDisplay(expense);
     setNewExpense({
       ...expense,
+      expenseCategories,
+      expenseMerchants,
       amount: expense.amount != null ? String(expense.amount) : '',
       scheduledFor: toScheduledForInputValue(expense.scheduledFor),
       isManualSplit: false,
       chargeAmount: '',
     });
-    setMerchantSearch(expense.merchantName || '');
+    setMerchantSearch('');
     setEditingExpenseId(expense.id);
     setShowExpenseForm(true);
   };
   const startQuickExpense = (cardId) => {
-    setNewExpense({ name: '', amount: '', category: '', merchantName: '', cardId, isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+    quickSpendAnchorCardIdRef.current = cardId;
+    setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId, isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
     setMerchantSearch('');
     setEditingExpenseId(null);
     setShowExpenseForm(true);
   };
-  const handleMerchantSelect = (name, cat) => { setMerchantSearch(name); setNewExpense({ ...newExpense, merchantName: name, category: cat, cardId: '' }); setShowMerchantSuggestions(false); };
+  const addExpenseMerchantFromList = (name, cat) => {
+    setNewExpense((prev) => {
+      const merchants = prev.expenseMerchants.includes(name) ? prev.expenseMerchants : [...prev.expenseMerchants, name];
+      const categories = prev.expenseCategories.includes(cat) ? prev.expenseCategories : [...prev.expenseCategories, cat];
+      const cardId = pickExpenseCardId(cardBalances, categories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      return { ...prev, expenseMerchants: merchants, expenseCategories: categories, cardId };
+    });
+    setMerchantSearch('');
+    setShowMerchantSuggestions(false);
+  };
+  const addExpenseMerchantFreeText = () => {
+    const t = merchantSearch.trim();
+    if (!t) return;
+    setNewExpense((prev) => {
+      if (prev.expenseMerchants.includes(t)) return prev;
+      const merchants = [...prev.expenseMerchants, t];
+      const cardId = pickExpenseCardId(cardBalances, prev.expenseCategories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      return { ...prev, expenseMerchants: merchants, cardId };
+    });
+    setMerchantSearch('');
+    setShowMerchantSuggestions(false);
+  };
+  const removeExpenseMerchant = (name) => {
+    setNewExpense((prev) => {
+      const merchants = prev.expenseMerchants.filter((m) => m !== name);
+      const cardId = pickExpenseCardId(cardBalances, prev.expenseCategories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      return { ...prev, expenseMerchants: merchants, cardId };
+    });
+  };
+  const toggleExpenseCategory = (cat) => {
+    setNewExpense((prev) => {
+      const has = prev.expenseCategories.includes(cat);
+      const categories = has ? prev.expenseCategories.filter((c) => c !== cat) : [...prev.expenseCategories, cat];
+      const cardId = pickExpenseCardId(cardBalances, categories, prev.expenseMerchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      return { ...prev, expenseCategories: categories, cardId };
+    });
+  };
   const toggleCategorySelection = (cat) => {
     setNewCard((prev) => {
       const currentCategories = prev.categories || [];
@@ -1386,9 +1490,21 @@ USER'S DATA:
                                     </span>
                                   );
                                 })()}
-                                {expense.merchantName && <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1"><MerchantIcon merchantName={expense.merchantName} category={expense.category} className="w-4 h-4 rounded-sm border-0" />{expense.merchantName.split('(')[0].trim()}</span>}
+                                {expenseMerchantsForDisplay(expense).map((m) => {
+                                  const mc = KNOWN_MERCHANTS[m]?.cat || expenseCategoriesForDisplay(expense)[0] || expense.category;
+                                  return (
+                                    <span key={m} className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <MerchantIcon merchantName={m} category={mc} className="w-4 h-4 rounded-sm border-0" />
+                                      {m.split('(')[0].trim()}
+                                    </span>
+                                  );
+                                })}
                               </div>
-                              <div className="flex flex-wrap items-center gap-2 text-xs"><span className="font-medium text-slate-500">{CATEGORY_ICONS[expense.category]} {expense.category}</span><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span></div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className="font-medium text-slate-500">{expenseCategoriesForDisplay(expense).map((cat) => `${CATEGORY_ICONS[cat]} ${cat}`).join(' · ') || '—'}</span>
+                                <span className="text-slate-300 dark:text-slate-600">•</span>
+                                <span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span>
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-16 sm:pl-0">
@@ -1675,54 +1791,77 @@ USER'S DATA:
 
             <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Item / Purpose</label><input type="text" required value={newExpense.name} onChange={(e) => setNewExpense({ ...newExpense, name: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" placeholder="e.g. Cinema Tickets" /></div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Specific Merchant (Optional)</label>
-                <div className="relative">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Categories</label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Select every category this purchase touches (one or more).</p>
+              <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto p-1 -m-1">
+                {CATEGORIES.map((cat) => {
+                  const isSelected = newExpense.expenseCategories.includes(cat);
+                  return (
+                    <button type="button" key={cat} onClick={() => toggleExpenseCategory(cat)} className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border-2 flex items-center gap-1.5 ${isSelected ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-800 hover:border-slate-300'}`}>
+                      {CATEGORY_ICONS[cat]} {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Retailers (optional)</label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Add several stores for the same trip or basket. Pick from search or type and press Add.</p>
+              {newExpense.expenseMerchants.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {newExpense.expenseMerchants.map((name) => {
+                    const iconCat = KNOWN_MERCHANTS[name]?.cat || newExpense.expenseCategories[0] || CATEGORIES[0];
+                    return (
+                      <span key={name} className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200">
+                        <MerchantIcon merchantName={name} category={iconCat} className="w-5 h-5 rounded border-0 bg-transparent" />
+                        <span className="max-w-[10rem] truncate">{name.split('(')[0].trim()}</span>
+                        <button type="button" onClick={() => removeExpenseMerchant(name)} className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500" aria-label={`Remove ${name}`}><X size={14} /></button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
                   <Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} />
-                  <input type="text" value={merchantSearch} onChange={(e) => { setMerchantSearch(e.target.value); setNewExpense({ ...newExpense, merchantName: e.target.value, cardId: '' }); setShowMerchantSuggestions(true); }} onFocus={() => setShowMerchantSuggestions(true)} className="w-full pl-10 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" placeholder="e.g. Wolt, FOX..." />
+                  <input type="text" value={merchantSearch} onChange={(e) => { setMerchantSearch(e.target.value); setShowMerchantSuggestions(true); }} onFocus={() => setShowMerchantSuggestions(true)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExpenseMerchantFreeText(); } }} className="w-full pl-10 pr-3 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" placeholder="e.g. Wolt, FOX..." />
                   {showMerchantSuggestions && merchantSearch && (
                     <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
                       {getSmartMatches(merchantSearch).map(([name, data]) => (
-                        <div key={name} onMouseDown={() => handleMerchantSelect(name, data.cat)} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex justify-between items-center">
+                        <div key={name} onMouseDown={() => addExpenseMerchantFromList(name, data.cat)} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex justify-between items-center">
                           <div className="flex items-center gap-2"><MerchantIcon merchantName={name} category={data.cat} className="w-6 h-6 rounded border-0 bg-transparent" /><span className="font-bold text-slate-800 dark:text-slate-200">{name}</span></div>
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded">{data.cat}</span>
                         </div>
                       ))}
-                      {getSmartMatches(merchantSearch).length === 0 && <div className="p-3 text-sm text-slate-500 text-center">Unrecognized merchant. Using generic rules.</div>}
+                      {getSmartMatches(merchantSearch).length === 0 && <div className="p-3 text-sm text-slate-500 text-center">No catalog match — use Add for a custom name.</div>}
                     </div>
                   )}
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Category</label>
-                <select required value={newExpense.category} onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value, cardId: '' })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium appearance-none">
-                  <option value="" disabled>-- Select Category --</option>
-                  {CATEGORIES.map((cat) => <option key={cat} value={cat}>{CATEGORY_ICONS[cat]} {cat}</option>)}
-                </select>
+                <button type="button" onClick={addExpenseMerchantFreeText} className="shrink-0 px-4 py-3 rounded-xl border-2 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold text-sm hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors">Add</button>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Plan for month (optional)</label>
-              <input type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value, cardId: '' })} className="w-full sm:w-64 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" />
+              <input type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value })} className="w-full sm:w-64 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" />
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">Pick a date in the month you intend to pay. <strong className="font-semibold text-slate-600 dark:text-slate-300">Monthly</strong> cards count spending per calendar month and refill on the 1st; future dates let you plan against that month&apos;s balance.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Estimated Cost (₪)</label>
-                <input type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value, cardId: '' })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-mono font-bold text-lg text-emerald-600 dark:text-emerald-400" placeholder="0.00" />
+                <input type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-mono font-bold text-lg text-emerald-600 dark:text-emerald-400" placeholder="0.00" />
                 {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-white border-slate-300" /><label htmlFor="isManualSplit" className="text-xs font-semibold text-slate-500 dark:text-slate-400 cursor-pointer">Split this payment across multiple cards?</label></div>}
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
-                <select required disabled={!newExpense.category} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
-                  <option value="" disabled>{!newExpense.category ? 'Awaiting category...' : '-- Evaluated Cards --'}</option>
+                <select required disabled={!newExpense.expenseCategories?.length} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
+                  <option value="" disabled>{!newExpense.expenseCategories?.length ? 'Select at least one category...' : '-- Evaluated Cards --'}</option>
                   {sortedCardBalances.map((card) => {
-                    if (!newExpense.category) return null;
-                    const compatibility = checkCompatibility(card, newExpense.category, newExpense.merchantName);
+                    if (!newExpense.expenseCategories?.length) return null;
+                    const isAllowedByRules = cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants);
                     const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
                     const targetMonthKey = newExpense.scheduledFor
                       ? getCalendarMonthKey(newExpense.scheduledFor)
@@ -1736,13 +1875,12 @@ USER'S DATA:
                       }
                     }
                     const canAfford = isEditingCurrent || rem >= parseFloat(newExpense.amount || 0);
-                    const isAllowedByRules = compatibility.allowed;
                     const isSelectable = isAllowedByRules && (rem > 0 || isEditingCurrent);
                     const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
                     return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Available: ₪{rem.toLocaleString()}) {!isAllowedByRules ? '- Rule Blocked' : (!canAfford ? '- Requires Split' : '')}</option>;
                   })}
                 </select>
-                {newExpense.category && cardBalances.filter((c) => checkCompatibility(c, newExpense.category, newExpense.merchantName).allowed).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this merchant/category.</p>}
+                {newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
               </div>
             </div>
 
