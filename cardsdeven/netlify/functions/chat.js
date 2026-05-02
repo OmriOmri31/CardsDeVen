@@ -17,7 +17,7 @@ export const handler = async (event) => {
       return asString.length > maxChars ? `${asString.slice(0, maxChars)}\n...[truncated]` : asString;
     };
 
-    const optimizedSystemInstruction = truncate(systemInstruction, 2200);
+    const optimizedSystemInstruction = truncate(systemInstruction, 32000);
     const optimizedQuery = truncate(query, 1200);
     const optimizedHistory = (Array.isArray(history) ? history : [])
       .slice(-8)

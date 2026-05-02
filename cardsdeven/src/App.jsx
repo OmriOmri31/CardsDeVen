@@ -174,6 +174,28 @@ function DealLink({ url, className, children }) {
   return <span className={className}>{children}</span>;
 }
 
+/** Compact lines for the AI system prompt (club-filtered; capped for token limits). */
+function buildDiscountCatalogPrompt(discountsData, userClubs, maxChars = 22000) {
+  const set = new Set(userClubs);
+  const rows = discountsData.filter((d) => set.has(d.c));
+  const lines = rows.map((d) => {
+    const u = (d.url || d.product_url || '').trim();
+    const m = String(d.m).replace(/\s+/g, ' ').trim();
+    const desc = String(d.d).replace(/\s+/g, ' ').trim();
+    return u ? `${d.c} | ${m} | ${desc} | ${u}` : `${d.c} | ${m} | ${desc}`;
+  });
+  let body = '';
+  let n = 0;
+  for (const line of lines) {
+    if (body.length + line.length + 1 > maxChars) break;
+    body += (body ? '\n' : '') + line;
+    n += 1;
+  }
+  const truncated = n < lines.length;
+  const head = `DEAL CATALOG (${n} of ${lines.length} deals for the user's active clubs${truncated ? '; list truncated—use these first' : ''}):`;
+  return body ? `${head}\n${body}` : 'No deals loaded for active clubs.';
+}
+
 /** Pais+ and other deals often use titles that are not exact KNOWN_MERCHANTS keys. */
 function dealMatchesInsightMerchant(deal, searchMatch, rawQuery) {
   if (deal.m === searchMatch) return true;
@@ -568,7 +590,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${import.meta.env.BASE_URL}pais_plus_data.json`)
+    fetch(`${import.meta.env.BASE_URL}pais_plus_deals.json`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data) => {
         if (cancelled) return;
@@ -586,7 +608,7 @@ export default function App() {
         );
       })
       .catch((err) => {
-        console.warn('CardsDeVen: could not load pais_plus_data.json', err);
+        console.warn('CardsDeVen: could not load pais_plus_deals.json', err);
         if (!cancelled) setPaisPlusDiscounts([]);
       });
     return () => { cancelled = true; };
@@ -763,7 +785,7 @@ export default function App() {
     setAiInput('');
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
-    const activeDiscounts = discountsData.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
+    const dealCatalog = buildDiscountCatalogPrompt(discountsData, userClubs, 22000);
     const walletString = cardBalances.map((c) => {
       let line = `${c.name}:₪${c.remaining} (limit ₪${parseFloat(c.balance).toLocaleString()})`;
       if (c.ruleType === 'monthly') line += ' [MONTHLY: balance resets on the 1st; spending counts per calendar month]';
@@ -774,7 +796,6 @@ export default function App() {
       .slice(0, 12)
       .map((e) => `${e.name}:₪${e.amount} on ${e.scheduledFor}${e.cardId ? ` (card ${cards.find((c) => c.id === e.cardId)?.name || e.cardId})` : ''}`)
       .join(' | ') || 'None';
-    const merchantNames = Object.keys(KNOWN_MERCHANTS).slice(0, 120).map((k) => k.split('(')[0].trim()).join(', ');
     const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
 Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
 
@@ -782,8 +803,8 @@ USER'S DATA:
 - Clubs: ${activeClubsList || 'None'}
 - Wallet Cards (with balances): ${walletString || 'Empty'}
 - Future-dated purchase plans (scheduled): ${futurePlansSummary}
-- Available Discounts: ${activeDiscounts || 'None'}
-- Supported Merchants: ${merchantNames}
+- ${dealCatalog}
+- When the catalog does not name a chain explicitly, you may still map the user's request to well-known Israeli retail / dining / cinema brands and combine with their cards and any matching catalog lines.
 
 ### MONTHLY & FUTURE PLANNING RULES:
 - Cards marked MONTHLY reset to their full limit on the 1st of each calendar month; only expenses in that month (by "planned for" date or logged date) reduce that month's balance.
@@ -798,8 +819,8 @@ USER'S DATA:
 
 ### DECISION LOGIC:
 1. INTENT: What does the user want to buy?
-2. MATCH: Which merchants from the 'Supported Merchants' list sell this?
-3. CALCULATE THE BEST DEAL: Check 'Available Discounts' for those merchants. Then, check 'Wallet Cards' to see which card actually has enough money to pay for it.
+2. MATCH: Which merchants or deal lines in the DEAL CATALOG fit the request (and common Israeli brand names)?
+3. CALCULATE THE BEST DEAL: Prefer specific lines from the DEAL CATALOG (including URLs when present). Then check 'Wallet Cards' for sufficient balance.
 4. RECOMMEND: You MUST choose the absolute best combination of [Merchant] + [Discount] + [Specific Card to pay with].
 
 ### STRICT RESPONSE FORMAT:

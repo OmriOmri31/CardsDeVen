@@ -28,16 +28,17 @@ jobs:
 
       - name: Run Scraper
         env:
+          SKIP_GIT_PUSH: "1"
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           BEHATSDAA_ID: ${{ secrets.BEHATSDAA_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python scraper.py
 
-      - name: Commit and Push JSON
+      - name: Commit and push slim Behatsdaa JSON
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add public/data.json
-          git commit -m "chore: auto-update discount data" || echo "No changes to commit"
+          git add cardsdeven/public/behatsdaa_deals.json
+          git commit -m "chore: auto-update behatsdaa_deals.json" || echo "No changes to commit"
           git push

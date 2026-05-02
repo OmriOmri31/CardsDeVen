@@ -54,6 +54,7 @@ except ImportError:
 PAIS_LANDING = "https://www.pais.co.il/info/paisplus.aspx"
 PAIS_PLUS_ORIGIN = "https://paisplus.co.il"
 OUTPUT_PATH = os.path.join("cardsdeven", "public", "pais_plus_data.json")
+DEALS_PUBLIC_PATH = os.path.join("cardsdeven", "public", "pais_plus_deals.json")
 CLUB_CODE = "PAIS_PLUS"
 
 # Gemini embed_content allows at most 100 texts per request (BatchEmbedContentsRequest).
@@ -396,10 +397,16 @@ def run_embed_deals_incremental(all_deals: list[dict]) -> list[dict]:
 
 
 def push_to_github() -> None:
-    """Commit and push pais_plus_data.json (mirrors scraper.py behavior for data.json)."""
-    print("--- Git Automation (pais_plus_data.json) ---")
+    """Commit and push slim pais_plus_deals.json (vectors stay in local pais_plus_data.json only)."""
+    if os.environ.get("SKIP_GIT_PUSH", "").strip().lower() in ("1", "true", "yes"):
+        print("SKIP_GIT_PUSH set; skipping git push.")
+        return
+    print("--- Git Automation (pais_plus_deals.json) ---")
     try:
-        subprocess.run(["git", "add", "cardsdeven/public/pais_plus_data.json"], check=True)
+        if not os.path.isfile(DEALS_PUBLIC_PATH):
+            print("No pais_plus_deals.json to commit.")
+            return
+        subprocess.run(["git", "add", "cardsdeven/public/pais_plus_deals.json"], check=True)
         commit_msg = f"auto-scrape pais+: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
         print("Pulling latest changes from GitHub...")
@@ -474,7 +481,12 @@ def main() -> int:
         with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
+        slim = {"last_updated": payload["last_updated"], "source": "pais_plus", "deals": all_deals}
+        with open(DEALS_PUBLIC_PATH, "w", encoding="utf-8") as f:
+            json.dump(slim, f, ensure_ascii=False, indent=2)
+
         print(f"Wrote {OUTPUT_PATH}")
+        print(f"Wrote {DEALS_PUBLIC_PATH} ({len(all_deals)} deals, embeddings only in full file)")
     except Exception as e:
         print(f"A critical error occurred: {e}")
         exit_code = 1

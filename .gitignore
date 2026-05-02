@@ -5,5 +5,9 @@
 firebase-service-account.json
 *firebase-adminsdk*.json
 
+# Large scrape outputs with embeddings (local cache only; ship slim *deals*.json)
+cardsdeven/public/data.json
+cardsdeven/public/pais_plus_data.json
+
 __pycache__/
 *.py[cod]

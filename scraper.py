@@ -120,10 +120,14 @@ def get_new_otp(start_time, timeout_seconds=120):
 
 def push_to_github():
     print("--- Git Automation Started ---")
+    if os.environ.get("SKIP_GIT_PUSH", "").strip().lower() in ("1", "true", "yes"):
+        print("SKIP_GIT_PUSH set; skipping git add/commit/push.")
+        return
     try:
+        # Ship slim JSON only; full data.json stays local (embeddings cache).
         to_add = [
             rel
-            for rel in ("cardsdeven/public/data.json", "cardsdeven/public/behatsdaa_deals.json")
+            for rel in ("cardsdeven/public/behatsdaa_deals.json",)
             if os.path.isfile(os.path.join(_REPO_ROOT, rel))
         ]
         if not to_add:
@@ -402,8 +406,28 @@ def scrape_page_data(page, url, master_data):
                 href = ""
                 try:
                     href = card.evaluate(
-                        """(el) => { const a = el.closest('a'); return a && a.getAttribute('href') ? a.getAttribute('href').trim() : ''; }"""
+                        """(el) => {
+                          const bad = (h) => !h || h === '#' || h.toLowerCase().startsWith('javascript:');
+                          const pick = (x) => { const h = (x || '').trim(); return bad(h) ? '' : h; };
+                          const root = el.closest ? (el.closest('.categories-container-item') || el) : el;
+                          if (root && root.querySelectorAll) {
+                            for (const a of root.querySelectorAll('a[href]')) {
+                              const h = pick(a.getAttribute('href'));
+                              if (h) return h;
+                            }
+                          }
+                          let p = root;
+                          for (let i = 0; i < 12 && p; i++) {
+                            if (p.tagName === 'A') {
+                              const h = pick(p.getAttribute('href'));
+                              if (h) return h;
+                            }
+                            p = p.parentElement;
+                          }
+                          return '';
+                        }"""
                     )
+                    href = (href or "").strip()
                 except Exception:
                     try:
                         al = card.locator("a[href]")
