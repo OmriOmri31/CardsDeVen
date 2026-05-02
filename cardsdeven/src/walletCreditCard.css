@@ -9,7 +9,7 @@
   --wcc-bg: linear-gradient(135deg, #171717 0%, #262626 100%);
   position: relative;
   width: 268px;
-  height: 172px;
+  height: 188px;
   border-radius: 1rem;
   font-size: 18px;
   color: #fff;
@@ -50,7 +50,7 @@
 
 .wallet-credit-card .wcc-mc {
   position: absolute;
-  top: 6.1em;
+  top: 5.5em;
   right: 1.35em;
   display: flex;
   align-items: center;
@@ -75,7 +75,7 @@
 
 .wallet-credit-card .wcc-program {
   position: absolute;
-  top: 6.35em;
+  top: 5.75em;
   right: 5.4em;
   max-width: 10.5em;
   font-size: 0.72em;
@@ -87,27 +87,30 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
-.wallet-credit-card .wcc-balance {
+/* Original limit — smaller, above current balance */
+.wallet-credit-card .wcc-original {
   position: absolute;
-  top: 8.15em;
+  top: 7.85em;
   left: 1.35em;
-  font-size: 1.12em;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 0.58em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  opacity: 0.9;
+  line-height: 1.2;
+  max-width: 15em;
+  text-transform: uppercase;
 }
 
-.wallet-credit-card .wcc-limit {
+/* Current / remaining balance — largest */
+.wallet-credit-card .wcc-current {
   position: absolute;
-  top: 11.35em;
-  left: 1.35em;
-  font-size: 0.62em;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  opacity: 0.92;
-  line-height: 1.25;
-  max-width: 14em;
-  text-transform: uppercase;
+  top: 9.35em;
+  left: 1.3em;
+  font-size: 1.38em;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 @media (min-width: 1024px) {

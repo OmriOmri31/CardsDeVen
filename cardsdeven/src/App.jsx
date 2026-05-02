@@ -671,7 +671,13 @@ const cardMatchesExpenseSelection = (card, categories, merchants) => {
 };
 
 function pickExpenseCardId(cardBalances, categories, merchants, previousCardId, anchorCardId) {
-  if (!categories || categories.length === 0) return '';
+  if (!categories || categories.length === 0) {
+    for (const id of [previousCardId, anchorCardId]) {
+      if (!id) continue;
+      if (cardBalances.some((c) => c.id === id)) return id;
+    }
+    return '';
+  }
   for (const id of [previousCardId, anchorCardId]) {
     if (!id) continue;
     const card = cardBalances.find((c) => c.id === id);
@@ -994,8 +1000,8 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chro
           <span className="wcc-mc-circle wcc-mc-circle--red" />
           <span className="wcc-mc-circle wcc-mc-circle--orange" />
         </div>
-        <div className="wcc-balance">₪{balanceRemaining.toLocaleString()}</div>
-        <div className="wcc-limit">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
+        <div className="wcc-original">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
+        <div className="wcc-current">₪{balanceRemaining.toLocaleString()}</div>
       </div>
     </div>
   );
@@ -1773,20 +1779,20 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             chromeGradient={chromeGradient}
                           />
                           <div className="flex-1 min-w-0 flex flex-col gap-4">
-                            <div className="flex justify-between items-start gap-3">
-                              <div className="min-w-0">
-                                <h3 className="cdv-comic-title text-xl sm:text-2xl text-slate-900 dark:text-white tracking-tight leading-tight">{card.name}</h3>
-                                <div className={`flex flex-wrap items-center gap-2 mt-2 text-xs font-bold uppercase tracking-wider font-mono ${isExpiringSoon ? 'text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400'}`}>
-                                  <ruleData.icon size={14} />
+                            <div className="flex flex-col gap-3">
+                              <h3 className="cdv-comic-title text-xl sm:text-2xl text-slate-900 dark:text-white tracking-tight leading-snug break-words pr-1">{card.name}</h3>
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className={`flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider font-mono min-w-0 ${isExpiringSoon ? 'text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                                  <ruleData.icon size={14} className="shrink-0" />
                                   <span>{ruleData.label}</span>
                                   {card.ruleType === 'expires' && card.expiryDate && <span>• {new Date(card.expiryDate).toLocaleDateString()}</span>}
                                   {isExpiringSoon && <span className="text-orange-500">• EXPIRING</span>}
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0 border-[3px] border-slate-900 dark:border-slate-600 shadow-[3px_3px_0_#6366f1] bg-slate-100 dark:bg-slate-800/80 p-1">
-                                <button type="button" title="Edit card" onClick={() => startEditCard(card)} className="p-2.5 hover:bg-indigo-100 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-900 dark:text-slate-100"><Edit2 size={17} /></button>
-                                <span className="w-px h-5 bg-slate-300 dark:bg-slate-600" aria-hidden />
-                                <button type="button" title="Delete card" onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-md transition-colors text-red-600 dark:text-red-400"><Trash2 size={17} /></button>
+                                <div className="flex items-center gap-1 shrink-0 border-[3px] border-slate-900 dark:border-slate-600 shadow-[3px_3px_0_#6366f1] bg-slate-100 dark:bg-slate-800/80 p-1 self-start sm:self-center">
+                                  <button type="button" title="Edit card" onClick={() => startEditCard(card)} className="p-2.5 hover:bg-indigo-100 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-900 dark:text-slate-100"><Edit2 size={17} /></button>
+                                  <span className="w-px h-5 bg-slate-300 dark:bg-slate-600" aria-hidden />
+                                  <button type="button" title="Delete card" onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-md transition-colors text-red-600 dark:text-red-400"><Trash2 size={17} /></button>
+                                </div>
                               </div>
                             </div>
                             <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 border-2 border-slate-900/10 dark:border-slate-700 overflow-hidden">
@@ -2299,11 +2305,11 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
-                <select required disabled={!newExpense.expenseCategories?.length} value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:opacity-50 outline-none transition-all font-medium appearance-none">
-                  <option value="" disabled>{!newExpense.expenseCategories?.length ? 'Select at least one category...' : '-- Evaluated Cards --'}</option>
+                <select required value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium appearance-none">
+                  <option value="" disabled>{!newExpense.expenseCategories?.length ? 'Choose a card (add categories to filter by rules)' : '-- Evaluated Cards --'}</option>
                   {sortedCardBalances.map((card) => {
-                    if (!newExpense.expenseCategories?.length) return null;
-                    const isAllowedByRules = cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants);
+                    const noCatsYet = !newExpense.expenseCategories?.length;
+                    const isAllowedByRules = noCatsYet || cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants);
                     const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
                     const targetMonthKey = newExpense.scheduledFor
                       ? getCalendarMonthKey(newExpense.scheduledFor)
@@ -2317,9 +2323,13 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       }
                     }
                     const canAfford = isEditingCurrent || rem >= parseFloat(newExpense.amount || 0);
-                    const isSelectable = isAllowedByRules && (rem > 0 || isEditingCurrent);
+                    const isAnchorOrSelected = card.id === newExpense.cardId;
+                    const isSelectable = noCatsYet
+                      ? (isAnchorOrSelected || rem > 0)
+                      : (isAllowedByRules && (rem > 0 || isEditingCurrent));
                     const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
-                    return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Available: ₪{rem.toLocaleString()}) {!isAllowedByRules ? '- Rule Blocked' : (!canAfford ? '- Requires Split' : '')}</option>;
+                    const ruleHint = noCatsYet ? '' : (!isAllowedByRules ? ' - Rule Blocked' : (!canAfford ? ' - Requires Split' : ''));
+                    return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Available: ₪{rem.toLocaleString()}){ruleHint}</option>;
                   })}
                 </select>
                 {newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
