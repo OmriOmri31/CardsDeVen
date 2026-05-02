@@ -6,6 +6,11 @@ import {
 } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import {
+  clubSearchTermsIncludeStandupTopic,
+  dealBlobMentionsStandupComedian,
+  scoreDealForChatRetrieval,
+} from './standupComedians';
+import {
   CreditCard, LayoutDashboard, Receipt, Plus, Trash2, AlertCircle,
   CalendarDays, RefreshCw, Infinity as InfinityIcon, CheckCircle2,
   Edit2, Moon, Sun, PieChart, LogOut, Lock, Mail,
@@ -326,7 +331,10 @@ function retrieveRelevantDealsForChat(discountsData, userClubs, userText, priorU
     picked = stratifiedDealSample(pool, userClubs, 20);
   } else {
     const scored = pool
-      .map((d) => ({ d, s: scoreDealAgainstTokens(d, tokens, expanded) }))
+      .map((d) => ({
+        d,
+        s: scoreDealForChatRetrieval(d, tokens, expanded, queryNorm, combined, scoreDealAgainstTokens(d, tokens, expanded)),
+      }))
       .sort((a, b) => b.s - a.s);
     const minScore = 5;
     picked = scored.filter((x) => x.s >= minScore).slice(0, 72).map((x) => x.d);
@@ -520,6 +528,8 @@ function dealMatchesClubSearch(deal, clubSearchRaw) {
     return false;
   });
   if (termHit) return true;
+
+  if (clubSearchTermsIncludeStandupTopic(terms) && dealBlobMentionsStandupComedian(deal)) return true;
 
   const cat = KNOWN_MERCHANTS[deal.m]?.cat || '';
   const catAliases = CATEGORY_ALIASES[cat] || [];
@@ -1102,6 +1112,7 @@ USER'S DATA:
 - ${dealCatalog}
 - For concrete מבצעים / prices / URLs, rely ONLY on the RETRIEVED block above—not on memory. If the user wants the full list, tell them to open the Clubs tab in the app.
 - When the retrieved lines do not name a chain explicitly, you may still map the request to well-known Israeli retail / dining / cinema brands and combine with their wallet cards.
+- Show / ticket lines: If a performer name in RETRIEVED matches the app’s embedded Israeli stand‑up roster (same list the Clubs tab uses for סטנדאפ search), treat the event as סטנדאפ / קומדיה. If the name is not on that roster and the line does not mention סטנדאפ/קומדיה, assume a music act (זמר/להקה) unless the text clearly says otherwise.
 
 ### MONTHLY & FUTURE PLANNING RULES:
 - Cards marked MONTHLY reset to their full limit on the 1st of each calendar month; only expenses in that month (by "planned for" date or logged date) reduce that month's balance.
@@ -1116,7 +1127,7 @@ USER'S DATA:
 
 ### DECISION LOGIC:
 1. INTENT: What does the user want to buy or know?
-2. MATCH: Which lines in the RETRIEVED block fit the request (and common Israeli brand names when needed)?
+2. MATCH: Which lines in the RETRIEVED block fit the request (and common Israeli brand names when needed)? For ambiguous solo names, use stand‑up roster vs music default as above.
 3. DEALS + PAYMENT: Prefer facts from RETRIEVED lines only. Match with 'Wallet Cards' balances. If a recommended line includes a URL, you MUST include the full https:// URL in your reply (copy from RETRIEVED) so the user can open the sale—every concrete sale you suggest should have its link if one appears in RETRIEVED.
 4. STYLE: Answer in a natural, conversational way. You may use **bold** sparingly for emphasis. Do NOT use a rigid section template. Do NOT end every reply with a forced question or "call to action"—only ask if it really helps.`;
     try {
