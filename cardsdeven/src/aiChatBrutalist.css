@@ -618,3 +618,130 @@
     box-shadow: 4px 4px 0 #4338ca, 8px 8px 0 #a78bfa;
   }
 }
+
+/* Advisor model messages: card layout + readable prose (not “terminal markdown”) */
+.ai-chat-brutalist .ai-advisor-root {
+  max-width: 26rem;
+  width: 100%;
+}
+
+.ai-chat-brutalist .ai-advisor-prose {
+  margin-bottom: 0.75rem;
+}
+
+.ai-chat-brutalist .ai-advisor-prose:last-child {
+  margin-bottom: 0;
+}
+
+.ai-chat-brutalist .ai-advisor-prose__p {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #cbd5e1;
+  margin: 0 0 0.65rem;
+}
+
+.ai-chat-brutalist .ai-advisor-prose__p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-chat-brutalist .ai-advisor-prose__p a {
+  color: #c4b5fd;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ai-chat-brutalist .ai-advisor-card {
+  border: 3px solid #475569;
+  background: #020617;
+  box-shadow: 6px 6px 0 #6366f1;
+  padding: 1rem 1.1rem 1.1rem;
+  margin-bottom: 1rem;
+  text-align: right;
+  direction: rtl;
+}
+
+.ai-chat-brutalist .ai-advisor-card[dir="ltr"] {
+  text-align: left;
+  direction: ltr;
+}
+
+.ai-chat-brutalist .ai-advisor-card:last-child {
+  margin-bottom: 0;
+}
+
+.ai-chat-brutalist .ai-advisor-card__title {
+  font-family: "Archivo Black", sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  color: #f8fafc;
+  margin: 0 0 0.75rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.ai-chat-brutalist .ai-advisor-card__title-ltr {
+  direction: ltr;
+  display: inline;
+  unicode-bidi: isolate;
+}
+
+.ai-chat-brutalist .ai-advisor-card__row {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: #94a3b8;
+  margin: 0 0 0.45rem;
+}
+
+.ai-chat-brutalist .ai-advisor-card__row:last-of-type {
+  margin-bottom: 0.65rem;
+}
+
+.ai-chat-brutalist .ai-advisor-card__label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #a5b4fc;
+  margin-bottom: 0.2rem;
+}
+
+.ai-chat-brutalist .ai-advisor-card__pay {
+  white-space: pre-wrap;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: #e2e8f0;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.65rem;
+  background: rgba(99, 102, 241, 0.12);
+  border: 2px solid #4338ca;
+}
+
+.ai-chat-brutalist .ai-advisor-card__pay a {
+  color: #fef08a;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ai-chat-brutalist .ai-advisor-card__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.25rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-decoration: none !important;
+  color: #0f172a !important;
+  background: linear-gradient(90deg, #a5b4fc 0%, #c4b5fd 100%);
+  border: 3px solid #312e81;
+  box-shadow: 4px 4px 0 #1e1b4b;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.ai-chat-brutalist .ai-advisor-card__action:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #1e1b4b;
+}

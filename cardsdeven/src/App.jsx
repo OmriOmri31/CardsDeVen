@@ -124,6 +124,21 @@ const PROGRAMS = {
   CUSTOM: { id: 'CUSTOM', name: 'Custom / Standard Card', type: 'custom', color: 'bg-gradient-to-br from-slate-400 to-slate-600', description: 'Manually pick categories.' }
 };
 
+/** Credit-card plastic gradient per program (Cibus = salmon pink). */
+const WALLET_CARD_CHROME = {
+  HG: 'linear-gradient(135deg, #db2777 0%, #9f1239 100%)',
+  FTR: 'linear-gradient(135deg, #57534e 0%, #1c1917 100%)',
+  FTR_VAC: 'linear-gradient(135deg, #0891b2 0%, #1d4ed8 100%)',
+  CB: 'linear-gradient(135deg, #fa8072 0%, #e11d48 95%)',
+  BM: 'linear-gradient(135deg, #60a5fa 0%, #1d4ed8 100%)',
+  GT: 'linear-gradient(135deg, #a855f7 0%, #4338ca 100%)',
+  TH: 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
+  TP: 'linear-gradient(135deg, #4ade80 0%, #059669 100%)',
+  DC: 'linear-gradient(135deg, #1e293b 0%, #020617 100%)',
+  FLEX: 'linear-gradient(135deg, #6366f1 0%, #6d28d9 100%)',
+  CUSTOM: 'linear-gradient(135deg, #94a3b8 0%, #475569 100%)',
+};
+
 const CLUBS = {
   BEHATSDAA: { id: 'BEHATSDAA', name: 'בהצדעה', color: 'bg-blue-600' },
   PAIS_PLUS: { id: 'PAIS_PLUS', name: 'פיס פלוס', color: 'bg-red-500' },
@@ -798,6 +813,176 @@ const renderChatText = (text) => {
   });
 };
 
+function linkifyForAdvisor(segment, keyPrefix) {
+  if (!segment) return null;
+  const re = /https?:\/\/[^\s\])>'"ֿ\]]+|www\.[^\s\])>'"ֿ\]]+/gi;
+  const out = [];
+  let last = 0;
+  let m;
+  let partIdx = 0;
+  while ((m = re.exec(segment)) !== null) {
+    if (m.index > last) {
+      out.push(<React.Fragment key={`${keyPrefix}-t-${partIdx++}`}>{segment.slice(last, m.index)}</React.Fragment>);
+    }
+    let href = m[0].replace(/[),.;:]+$/g, '');
+    if (href.toLowerCase().startsWith('www.')) href = `https://${href}`;
+    const label = hebrewAnchorLabelForUrl(href);
+    out.push(
+      <a key={`${keyPrefix}-a-${partIdx++}`} href={href} title={href} target="_blank" rel="noopener noreferrer">
+        {label}
+      </a>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < segment.length) {
+    out.push(<React.Fragment key={`${keyPrefix}-t-${partIdx}`}>{segment.slice(last)}</React.Fragment>);
+  }
+  return out.length ? out : segment;
+}
+
+function stripChatMarkdown(s) {
+  return String(s)
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1');
+}
+
+function parseAdvisorCardFields(body) {
+  const fields = {};
+  const lines = String(body).trim().split(/\r?\n/);
+  let cur = null;
+  for (const line of lines) {
+    const km = line.match(/^([A-Za-z]+):\s*(.*)$/);
+    if (km) {
+      cur = km[1].toUpperCase();
+      fields[cur] = km[2].trim();
+    } else if (cur && line.trim()) {
+      fields[cur] = fields[cur] ? `${fields[cur]}\n${line.trim()}` : line.trim();
+    }
+  }
+  return fields;
+}
+
+function splitAdvisorSegments(text) {
+  const str = String(text);
+  const out = [];
+  const re = /---CARD---\s*([\s\S]*?)---END---/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(str)) !== null) {
+    if (m.index > last) {
+      const content = str.slice(last, m.index).trim();
+      if (content) out.push({ type: 'text', content });
+    }
+    out.push({ type: 'card', fields: parseAdvisorCardFields(m[1]) });
+    last = re.lastIndex;
+  }
+  const tail = str.slice(last).trim();
+  if (tail) out.push({ type: 'text', content: tail });
+  if (out.length === 0 && str.trim()) out.push({ type: 'text', content: str.trim() });
+  return out;
+}
+
+function renderAdvisorProse(text) {
+  const cleaned = stripChatMarkdown(text).trim();
+  if (!cleaned) return null;
+  const paras = cleaned.split(/\n\n+/).filter(Boolean);
+  return paras.map((p, i) => (
+    <p key={`adv-p-${i}`} className="ai-advisor-prose__p">
+      {linkifyForAdvisor(p.replace(/\n/g, ' '), `adv-${i}`)}
+    </p>
+  ));
+}
+
+function advisorFieldLabels(lang) {
+  return lang === 'en'
+    ? { price: 'Price', why: 'Why it fits', pay: 'How to pay' }
+    : { price: 'מחיר', why: 'למה כדאי', pay: 'איך לשלם' };
+}
+
+function precedingUserLang(messages, modelIndex) {
+  for (let i = modelIndex - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') return detectInputLanguage(messages[i].text);
+  }
+  return 'he';
+}
+
+function renderAdvisorMessage(text, lang) {
+  const lab = advisorFieldLabels(lang);
+  const segments = splitAdvisorSegments(text);
+  return (
+    <div className="ai-advisor-root space-y-3">
+      {segments.map((seg, i) => {
+        if (seg.type === 'card') {
+          const f = seg.fields || {};
+          const heading = (f.HEADING || '').trim();
+          const price = stripChatMarkdown(f.PRICE || '').trim();
+          const why = stripChatMarkdown(f.WHY || '').trim();
+          const pay = stripChatMarkdown(f.PAY || '').trim();
+          const url = (f.URL || '').trim();
+          return (
+            <div key={`c-${i}`} className="ai-advisor-card" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+              {heading ? <h3 className="ai-advisor-card__title" dir="auto">{heading}</h3> : null}
+              {price ? (
+                <div>
+                  <div className="ai-advisor-card__label">{lab.price}</div>
+                  <p className="ai-advisor-card__row">
+                    <span className="text-white font-extrabold text-[1.05em]">{price}</span>
+                  </p>
+                </div>
+              ) : null}
+              {why ? (
+                <div>
+                  <div className="ai-advisor-card__label">{lab.why}</div>
+                  <p className="ai-advisor-card__row" dir="auto">{why}</p>
+                </div>
+              ) : null}
+              {pay ? (
+                <div>
+                  <div className="ai-advisor-card__label">{lab.pay}</div>
+                  <div className="ai-advisor-card__pay" dir="auto">{linkifyForAdvisor(pay, `pay-${i}`)}</div>
+                </div>
+              ) : null}
+              {url && /^https?:\/\//i.test(url) ? (
+                <a href={url} target="_blank" rel="noopener noreferrer" className="ai-advisor-card__action" title={url}>
+                  {hebrewAnchorLabelForUrl(url)}
+                </a>
+              ) : null}
+            </div>
+          );
+        }
+        return (
+          <div key={`t-${i}`} className="ai-advisor-prose">
+            {renderAdvisorProse(seg.content)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient }) {
+  const short = programName.length > 24 ? `${programName.slice(0, 23)}…` : programName;
+  return (
+    <div className="wallet-credit-card-wrap wallet-credit-card-wrap--lg-scale">
+      <div className="wallet-credit-card" style={{ '--wcc-bg': chromeGradient }}>
+        <div className="wcc-chip" aria-hidden />
+        <div className="wcc-contactless" aria-hidden />
+        <div className="wcc-debit-tag">BENEFIT</div>
+        <div className="wcc-program" title={programName}>{short}</div>
+        <div className="wcc-mc" aria-hidden>
+          <span className="wcc-mc-circle wcc-mc-circle--red" />
+          <span className="wcc-mc-circle wcc-mc-circle--orange" />
+        </div>
+        <div className="wcc-balance-label">AVAILABLE</div>
+        <div className="wcc-balance">₪{balanceRemaining.toLocaleString()}</div>
+        <div className="wcc-limit">LIMIT ₪{balanceLimit.toLocaleString()}</div>
+      </div>
+    </div>
+  );
+}
+
 const AI_CHAT_STORAGE_KEY = 'cardsdeven_ai_chat_v1';
 const DEFAULT_AI_WELCOME_TEXT = 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎';
 
@@ -1208,19 +1393,34 @@ USER'S DATA:
 ### TONE & PERSONALITY:
 - MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only. Do not mix languages unless user asks.
 - Reply natively in the EXACT language the user used.
-- Be highly energetic, direct, and slightly humorous (Israeli style). Use emojis appropriately (e.g., "מישהו פה מתכנן חגיגה 🍕", "ברור, בוא נארגן לך הופעה פצצה לחתונה 👔").
-- DO NOT be generic. Do not just list stores. Be a decisive, mathematical advisor.
+- Be energetic, direct, and practical (Israeli style). Avoid decorative emojis unless one short icon truly clarifies tone; default to none.
+- DO NOT be generic. Be a decisive advisor on money and cards.
+
+### OUTPUT FORMAT (CRITICAL — UI parses this):
+- Do NOT use markdown headings (#/##), asterisk bullets, or **bold** anywhere. No raw [text](url) markdown—only the URL: line below.
+- For each distinct deal/product recommendation, output exactly one block using these KEYs (English keys only). Values are in the user's language:
+
+---CARD---
+HEADING: One line title (product + hook). Latin/English brand names are fine inside the line; keep it one readable sentence.
+PRICE: One line (e.g. estimated ₪ or "לפי המבצע ב-RETRIEVED").
+WHY: 1–2 short sentences.
+PAY: The important part: which card(s), balances, split payment—short lines, plain text.
+URL: Full https:// URL copied from RETRIEVED, or the word NONE
+---END---
+
+- Repeat the block for multiple picks. Optional: 1 short intro sentence before the first card; optional 1 short closing line (e.g. offer more options). Nothing else between blocks.
+- For exhaustive "give me everything / הכל / רשימה מלאה" replies, you MAY skip CARD blocks and use a compact numbered plain list (still no ** or ###).
 
 ### RESPONSE LENGTH & LIST DEPTH:
-- If the user asks for a **suggestion**, **recommendation**, "what's good", "a good …", "give me an idea", one best pick, or similar—and they did **not** ask for the full list—give about **3** strong options (with brief why + links from RETRIEVED). Then offer more in one short line (e.g. "רוצה עוד אופציות?" / "Want more options?").
-- If they ask for **all**, **every**, **full/complete list**, **everything in [category]**, **הכל**, **רשימה מלאה**, **כל ה…**, **כל המופעים**, or clearly want exhaustive coverage—list **everything** relevant from RETRIEVED without capping count.
-- If intent is mixed, follow the strongest signal; if still unclear, use ~3 options and offer to expand.
+- If the user asks for a suggestion, "what's good", "a good …", or similar—and did NOT ask for the full list—use about 3 CARD blocks. Then one short line offering more options if they want.
+- If they ask for all / every / full list / הכל / רשימה מלאה / כל ה… — list everything from RETRIEVED (numbered plain list OK).
+- If unclear, default to ~3 CARD blocks and offer to expand.
 
 ### DECISION LOGIC:
 1. INTENT: What does the user want to buy or know?
 2. MATCH: Which lines in the RETRIEVED block fit the request (and common Israeli brand names when needed)? For ambiguous solo names, use stand‑up roster vs music default as above.
-3. DEALS + PAYMENT: Prefer facts from RETRIEVED lines only. Match with 'Wallet Cards' balances. If a recommended line includes a URL, you MUST include the full https:// URL in your reply (copy from RETRIEVED) so the user can open the sale—every concrete sale you suggest should have its link if one appears in RETRIEVED.
-4. STYLE: Answer in a natural, conversational way. You may use **bold** sparingly for emphasis. Do NOT use a rigid section template. Do NOT end every reply with a forced question or "call to action"—only ask if it really helps.`;
+3. DEALS + PAYMENT: Prefer facts from RETRIEVED only. Match with Wallet Cards balances. Every sale with a URL in RETRIEVED must appear in a CARD block with that full URL on the URL: line.
+4. Do not end every reply with a forced question—only when it helps.`;
     try {
       const responseText = await fetchGeminiAIResponse(userText, aiMessages, systemInstruction, abortControllerRef.current.signal);
       if (responseText) setAiMessages([...newMessages, { role: 'model', text: responseText }]);
@@ -1386,19 +1586,19 @@ USER'S DATA:
     });
   };
 
-  if (loadingAuth) return <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}><div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-blue-500"><Loader2 className="animate-spin" size={40} /></div></div>;
+  if (loadingAuth) return <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}><div className="min-h-screen cdv-comic-bg flex items-center justify-center text-indigo-600 dark:text-indigo-400"><Loader2 className="animate-spin" size={40} /></div></div>;
 
   if (!user) {
     return (
       <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 transition-colors duration-300">
+        <div className="min-h-screen cdv-comic-bg flex flex-col items-center justify-center p-4 transition-colors duration-300">
           <div className="mb-10 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-5 rounded-3xl shadow-xl mb-6 inline-block"><CreditCard size={48} className="text-white" /></div>
-            <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white mb-3 tracking-tight">CardsDeVen</h1>
-            <p className="text-slate-500 dark:text-slate-400 max-w-sm text-lg">Smart logic for Israeli gift cards.</p>
+            <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 p-5 rounded-3xl border-[3px] border-slate-900 dark:border-slate-600 shadow-[8px_8px_0_#312e81] mb-6 inline-block"><CreditCard size={48} className="text-white" /></div>
+            <h1 className="cdv-comic-title text-4xl text-slate-900 dark:text-white mb-3 tracking-tight">CardsDeVen</h1>
+            <p className="text-slate-600 dark:text-slate-400 max-w-sm text-lg font-medium">Smart logic for Israeli gift cards.</p>
           </div>
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 animate-in slide-in-from-bottom-8 fade-in duration-700 delay-150">
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6 text-center">{isLoginMode ? 'Welcome Back' : 'Create Account'}</h2>
+          <div className="w-full max-w-md cdv-comic-panel p-8 rounded-[2rem] animate-in slide-in-from-bottom-8 fade-in duration-700 delay-150">
+            <h2 className="cdv-comic-title text-2xl text-slate-900 dark:text-white mb-6 text-center">{isLoginMode ? 'Welcome Back' : 'Create Account'}</h2>
             {authError && <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-2xl mb-6 text-sm text-center border border-red-100 dark:border-red-800/50">{authError}</div>}
             <form onSubmit={handleAuthSubmit} className="space-y-5">
               <div>
@@ -1430,7 +1630,7 @@ USER'S DATA:
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} font-sans pb-28 transition-colors duration-300`}>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors duration-300 relative">
+      <div className="min-h-screen cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative">
         {toast.visible && (
           <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
             <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'} px-6 py-3 rounded-full shadow-2xl font-medium flex items-center gap-2`}>
@@ -1440,11 +1640,11 @@ USER'S DATA:
           </div>
         )}
 
-        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 p-4 sm:p-5 sticky top-0 z-40 transition-colors">
+        <header className="cdv-comic-header backdrop-blur-md p-4 sm:p-5 sticky top-0 z-40 transition-colors">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-2 sm:p-2.5 rounded-xl shadow-lg"><CreditCard size={24} className="text-white" /></div>
-              <div><h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">CardsDeVen</h1><p className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">{user.email}</p></div>
+              <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 p-2 sm:p-2.5 rounded-xl border-2 border-slate-900 dark:border-slate-600 shadow-[4px_4px_0_#312e81]"><CreditCard size={24} className="text-white" /></div>
+              <div><h1 className="cdv-comic-title text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">CardsDeVen</h1><p className="text-[10px] sm:text-xs font-medium text-slate-600 dark:text-slate-400 font-mono">{user.email}</p></div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
@@ -1458,10 +1658,10 @@ USER'S DATA:
           {activeTab === 'dashboard' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {expiringAlerts.length > 0 && (
-                <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-[2rem] p-6 shadow-lg text-white flex flex-col sm:flex-row items-center gap-4 sm:justify-between animate-in zoom-in-95">
+                <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-[2rem] p-6 border-[3px] border-slate-900 dark:border-slate-800 shadow-[8px_8px_0_#431407] text-white flex flex-col sm:flex-row items-center gap-4 sm:justify-between animate-in zoom-in-95">
                   <div className="flex items-center gap-4">
-                    <div className="bg-white/20 p-3 rounded-full"><Clock size={28} /></div>
-                    <div><h3 className="font-bold text-lg">Use It Or Lose It</h3><p className="text-white/80 text-sm">{expiringAlerts.length} card(s) expiring within 30 days!</p></div>
+                    <div className="bg-white/20 p-3 rounded-full border-2 border-white/30"><Clock size={28} /></div>
+                    <div><h3 className="cdv-comic-title text-lg">Use It Or Lose It</h3><p className="text-white/85 text-sm font-medium">{expiringAlerts.length} card(s) expiring within 30 days!</p></div>
                   </div>
                   <div className="w-full sm:w-auto space-y-2">
                     {expiringAlerts.map((card) => (
@@ -1475,30 +1675,30 @@ USER'S DATA:
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-gradient-to-br from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-700 text-white p-8 rounded-[2rem] shadow-xl relative overflow-hidden group hover:shadow-2xl transition-all">
-                  <div className="relative z-10"><div className="text-slate-300 dark:text-slate-400 text-sm font-semibold mb-2 uppercase tracking-widest">Total Portfolio</div><div className="text-5xl font-black mb-1">₪{totalInitialBalance.toLocaleString()}</div><div className="text-slate-400 dark:text-slate-500 text-sm">Initial setup across {cards.length} cards</div></div>
+                <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-8 rounded-[2rem] border-[3px] border-slate-900 dark:border-slate-600 shadow-[8px_8px_0_#6366f1] relative overflow-hidden group hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[6px_6px_0_#6366f1] transition-all">
+                  <div className="relative z-10"><div className="text-slate-300 text-sm font-bold mb-2 uppercase tracking-widest font-mono">Total Portfolio</div><div className="cdv-comic-title text-5xl mb-1">₪{totalInitialBalance.toLocaleString()}</div><div className="text-slate-400 text-sm">Initial setup across {cards.length} cards</div></div>
                   <div className="absolute -right-8 -bottom-8 bg-white/5 p-8 rounded-full group-hover:scale-110 transition-transform duration-500"><CreditCard size={100} className="text-white/10" /></div>
                 </div>
-                <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white p-8 rounded-[2rem] shadow-xl relative overflow-hidden group hover:shadow-2xl transition-all">
-                  <div className="relative z-10"><div className="text-emerald-100 text-sm font-semibold mb-2 uppercase tracking-widest">Available Power</div><div className="text-5xl font-black mb-1">₪{totalRemainingBalance.toLocaleString()}</div><div className="text-emerald-200 text-sm">After ₪{totalPlannedExpenses.toLocaleString()} total expenses</div></div>
+                <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white p-8 rounded-[2rem] border-[3px] border-emerald-950 shadow-[8px_8px_0_#065f46] relative overflow-hidden group hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[6px_6px_0_#065f46] transition-all">
+                  <div className="relative z-10"><div className="text-emerald-100 text-sm font-bold mb-2 uppercase tracking-widest font-mono">Available Power</div><div className="cdv-comic-title text-5xl mb-1">₪{totalRemainingBalance.toLocaleString()}</div><div className="text-emerald-100 text-sm">After ₪{totalPlannedExpenses.toLocaleString()} total expenses</div></div>
                   <div className="absolute -right-8 -bottom-8 bg-black/5 p-8 rounded-full group-hover:scale-110 transition-transform duration-500"><Receipt size={100} className="text-black/10" /></div>
                 </div>
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6">Budget by Category</h2>
+                <h2 className="cdv-comic-title text-2xl text-slate-900 dark:text-white mb-6">Budget by Category</h2>
                 {fundsByCategory.length === 0 ? (
-                  <div className="text-center p-12 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800"><PieChart size={48} className="mx-auto mb-4 text-slate-300 dark:text-slate-700" /><p className="text-slate-500 dark:text-slate-400 font-medium">Add cards to populate your category breakdown.</p></div>
+                  <div className="cdv-comic-panel cdv-comic-panel--dashed text-center p-12 rounded-[2rem]"><PieChart size={48} className="mx-auto mb-4 text-indigo-400 dark:text-indigo-500" /><p className="text-slate-600 dark:text-slate-400 font-medium">Add cards to populate your category breakdown.</p></div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {fundsByCategory.map(([category, data]) => (
-                      <div key={category} className="p-6 bg-white dark:bg-slate-900 rounded-[1.5rem] shadow-sm border border-slate-100 dark:border-slate-800 hover:shadow-md hover:-translate-y-1 transition-all group">
+                      <div key={category} className="cdv-comic-panel p-6 rounded-[1.5rem] hover:-translate-y-1 transition-transform group">
                         <div className="flex justify-between items-start mb-4">
-                          <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2"><span>{CATEGORY_ICONS[category]}</span><span className="leading-tight">{category}</span></div>
-                          <div className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">Available</div>
+                          <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 font-mono text-sm"><span>{CATEGORY_ICONS[category]}</span><span className="leading-tight">{category}</span></div>
+                          <div className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 px-3 py-1 border-2 border-emerald-700/30 text-xs font-extrabold uppercase">Available</div>
                         </div>
-                        <div className="text-3xl font-black text-slate-900 dark:text-white mb-3">₪{data.total.toLocaleString()}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed"><span className="font-semibold">Sources:</span> {data.sources.join(', ')}</div>
+                        <div className="cdv-comic-title text-3xl text-slate-900 dark:text-white mb-3">₪{data.total.toLocaleString()}</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed"><span className="font-bold">Sources:</span> {data.sources.join(', ')}</div>
                       </div>
                     ))}
                   </div>
@@ -1510,48 +1710,83 @@ USER'S DATA:
           {/* Wallets */}
           {activeTab === 'wallets' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex justify-between items-end">
-                <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Digital Wallet</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Manage your active gift cards and budgets.</p></div>
-                <button onClick={() => { resetCardForm(); setShowCardForm(true); }} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg hover:shadow-xl"><Plus size={20} /> Add Card</button>
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+                <div>
+                  <h2 className="cdv-comic-title text-3xl text-slate-900 dark:text-white tracking-tight">Digital Wallet</h2>
+                  <p className="text-slate-600 dark:text-slate-400 mt-1 font-medium">Manage your active gift cards and budgets.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { resetCardForm(); setShowCardForm(true); }}
+                  className="border-[3px] border-slate-900 dark:border-slate-500 bg-indigo-600 text-white px-5 py-3 font-extrabold flex items-center justify-center gap-2 shadow-[6px_6px_0_#312e81] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[4px_4px_0_#312e81] transition-all font-mono text-sm uppercase tracking-wide"
+                >
+                  <Plus size={20} /> Add Card
+                </button>
               </div>
 
               {cards.length === 0 ? (
-                <div className="text-center p-16 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 border-dashed"><CreditCard size={64} className="mx-auto mb-6 text-slate-200 dark:text-slate-800" /><h3 className="text-xl font-bold text-slate-700 dark:text-slate-200 mb-2">Your wallet is empty</h3><p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto">Click the button above to register your first funding source or gift card.</p></div>
+                <div className="cdv-comic-panel cdv-comic-panel--dashed text-center p-16 rounded-[2rem]">
+                  <CreditCard size={64} className="mx-auto mb-6 text-indigo-500 dark:text-indigo-400" />
+                  <h3 className="cdv-comic-title text-xl text-slate-900 dark:text-white mb-2">Your wallet is empty</h3>
+                  <p className="text-slate-600 dark:text-slate-400 max-w-sm mx-auto">Add your first funding source or gift card.</p>
+                </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                   {cardBalances.map((card) => {
                     const ruleData = RULE_TYPES[card.ruleType?.toUpperCase()] || RULE_TYPES.PERMANENT;
                     const progData = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
+                    const chromeGradient = WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM;
                     const percentRemaining = Math.max(0, Math.min(100, (card.remaining / parseFloat(card.balance)) * 100));
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
                     return (
-                      <div key={card.id} className="relative group perspective-1000">
-                        <div className={`${card.color || GRADIENTS[0]} rounded-[2rem] p-8 text-white shadow-xl hover:shadow-2xl transition-all duration-300 aspect-[1.58/1] flex flex-col justify-between relative overflow-hidden ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-slate-950' : ''}`}>
-                          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-                          <div className="flex justify-between items-start gap-3 relative z-10">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap"><h3 className="font-bold text-2xl tracking-tight">{card.name}</h3><span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border border-white/20">{progData.name}</span></div>
-                              <div className={`flex items-center gap-2 text-xs font-medium uppercase tracking-wider ${isExpiringSoon ? 'text-orange-200 font-bold' : 'text-white/80'}`}><ruleData.icon size={14} /> {ruleData.label}{card.ruleType === 'expires' && card.expiryDate && ` • ${new Date(card.expiryDate).toLocaleDateString()}`}{isExpiringSoon && ' (EXPIRING!)'}</div>
-                            </div>
-                            <div className="shrink-0 flex flex-col items-end gap-2 pt-0.5">
-                              <span className="text-[9px] font-bold uppercase tracking-widest text-white/50 hidden sm:block">Card</span>
-                              <div className="flex items-center gap-1.5 rounded-xl bg-black/25 border border-white/15 p-1">
-                                <button type="button" title="Edit card" onClick={() => startEditCard(card)} className="p-2.5 hover:bg-white/15 rounded-lg transition-colors"><Edit2 size={17} /></button>
-                                <span className="w-px h-5 bg-white/20" aria-hidden />
-                                <button type="button" title="Delete card" onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 hover:bg-red-500/40 rounded-lg transition-colors text-red-100"><Trash2 size={17} /></button>
+                      <div
+                        key={card.id}
+                        className={`cdv-comic-panel rounded-[2rem] p-6 flex flex-col gap-6 ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-[#020617]' : ''}`}
+                      >
+                        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-start">
+                          <WalletCreditPlastic
+                            balanceRemaining={card.remaining}
+                            balanceLimit={parseFloat(card.balance)}
+                            programName={progData.name}
+                            chromeGradient={chromeGradient}
+                          />
+                          <div className="flex-1 min-w-0 flex flex-col gap-4">
+                            <div className="flex justify-between items-start gap-3">
+                              <div className="min-w-0">
+                                <h3 className="cdv-comic-title text-xl sm:text-2xl text-slate-900 dark:text-white tracking-tight leading-tight">{card.name}</h3>
+                                <div className={`flex flex-wrap items-center gap-2 mt-2 text-xs font-bold uppercase tracking-wider font-mono ${isExpiringSoon ? 'text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                                  <ruleData.icon size={14} />
+                                  <span>{ruleData.label}</span>
+                                  {card.ruleType === 'expires' && card.expiryDate && <span>• {new Date(card.expiryDate).toLocaleDateString()}</span>}
+                                  {isExpiringSoon && <span className="text-orange-500">• EXPIRING</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0 border-[3px] border-slate-900 dark:border-slate-600 shadow-[3px_3px_0_#6366f1] bg-slate-100 dark:bg-slate-800/80 p-1">
+                                <button type="button" title="Edit card" onClick={() => startEditCard(card)} className="p-2.5 hover:bg-indigo-100 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-900 dark:text-slate-100"><Edit2 size={17} /></button>
+                                <span className="w-px h-5 bg-slate-300 dark:bg-slate-600" aria-hidden />
+                                <button type="button" title="Delete card" onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-md transition-colors text-red-600 dark:text-red-400"><Trash2 size={17} /></button>
                               </div>
                             </div>
-                          </div>
-                          <div className="relative z-10">
-                            <div className="flex justify-between items-end mb-3">
-                              <div><div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Available</div><div className="text-4xl font-black font-mono tracking-tight">₪{card.remaining.toLocaleString()}</div></div>
-                              <div className="text-right"><div className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Total Limit</div><div className="text-lg font-bold">₪{parseFloat(card.balance).toLocaleString()}</div></div>
+                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 border-2 border-slate-900/10 dark:border-slate-700 overflow-hidden">
+                              <div className="bg-gradient-to-r from-indigo-500 to-violet-500 h-full transition-all duration-1000 ease-out" style={{ width: `${percentRemaining}%` }} />
                             </div>
-                            <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden backdrop-blur-sm mb-4"><div className="bg-white h-full rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${percentRemaining}%` }}><div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/50 animate-[shimmer_2s_infinite]"></div></div></div>
-                            <button type="button" onClick={() => startQuickExpense(card.id)} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-slate-900 font-bold text-sm uppercase tracking-wide shadow-lg hover:bg-emerald-400 hover:text-white transition-colors"><Zap size={18} className="fill-current shrink-0" /><span>Quick spend</span></button>
+                            <button
+                              type="button"
+                              onClick={() => startQuickExpense(card.id)}
+                              className="w-full flex items-center justify-center gap-2 py-3 border-[3px] border-slate-900 dark:border-slate-600 bg-indigo-600 text-white font-extrabold text-sm uppercase tracking-wide shadow-[4px_4px_0_#312e81] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0_#312e81] transition-all font-mono"
+                            >
+                              <Zap size={18} className="fill-current shrink-0" />
+                              <span>Quick spend</span>
+                            </button>
                           </div>
                         </div>
-                        <div className="px-4 py-4 flex flex-wrap gap-2">{card.derivedCats.map((cat) => (<span key={cat} className="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-1.5">{CATEGORY_ICONS[cat]} {cat}</span>))}</div>
+                        <div className="flex flex-wrap gap-2 pt-1 border-t-[3px] border-slate-200 dark:border-slate-700">
+                          {card.derivedCats.map((cat) => (
+                            <span key={cat} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-[2px] border-slate-900/15 dark:border-slate-600 px-3 py-1.5 text-xs font-bold shadow-[2px_2px_0_#6366f1] flex items-center gap-1.5 font-mono">
+                              {CATEGORY_ICONS[cat]} {cat}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
@@ -1815,22 +2050,27 @@ USER'S DATA:
               <div className="ai-brutalist-shell min-h-0">
                 <div className="ai-brutalist-tip">TIP: Budget + item + area = sharper combos.</div>
                 <div className="ai-brutalist-scroll space-y-4">
-                  {aiMessages.map((msg, idx) => (
-                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'model' && (
-                        <div className="ai-brutalist-avatar">
-                          <Bot size={16} className="text-violet-200" aria-hidden />
+                  {aiMessages.map((msg, idx) => {
+                    const replyLang = msg.role === 'model' ? precedingUserLang(aiMessages, idx) : 'he';
+                    return (
+                      <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        {msg.role === 'model' && (
+                          <div className="ai-brutalist-avatar">
+                            <Bot size={16} className="text-violet-200" aria-hidden />
+                          </div>
+                        )}
+                        <div
+                          className={`ai-brutalist-bubble break-words ${msg.role === 'user' ? 'ai-brutalist-bubble--user text-left whitespace-pre-wrap' : `ai-brutalist-bubble--model ${replyLang === 'en' ? 'text-left' : 'text-right'}`}`}
+                          dir={msg.role === 'model' ? (replyLang === 'en' ? 'ltr' : 'rtl') : 'auto'}
+                        >
+                          <div className="ai-brutalist-meta">{msg.role === 'user' ? 'You' : 'Advisor'}</div>
+                          <div dir="auto">
+                            {msg.role === 'model' ? renderAdvisorMessage(msg.text, replyLang) : renderChatText(msg.text)}
+                          </div>
                         </div>
-                      )}
-                      <div
-                        className={`ai-brutalist-bubble whitespace-pre-wrap break-words ${msg.role === 'user' ? 'ai-brutalist-bubble--user text-left' : 'ai-brutalist-bubble--model text-right'}`}
-                        dir={msg.role === 'model' ? 'rtl' : 'auto'}
-                      >
-                        <div className="ai-brutalist-meta">{msg.role === 'user' ? 'You' : 'Advisor'}</div>
-                        <div dir="auto">{renderChatText(msg.text)}</div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {isAiTyping && (
                     <div className="flex justify-start items-start gap-2">
                       <div className="ai-brutalist-avatar">
@@ -1869,9 +2109,9 @@ USER'S DATA:
           )}
         </main>
 
-        <nav className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] px-2 sm:px-6 py-4 flex justify-around sm:justify-center sm:gap-8 lg:gap-16 z-40 transition-colors overflow-x-auto">
+        <nav className="cdv-comic-nav fixed bottom-0 left-0 right-0 backdrop-blur-xl px-2 sm:px-6 py-4 flex justify-around sm:justify-center sm:gap-8 lg:gap-16 z-40 transition-colors overflow-x-auto">
           {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' }, { id: 'wallets', icon: CreditCard, label: 'Wallet' }, { id: 'planner', icon: Receipt, label: 'Planner' }, { id: 'insights', icon: Search, label: 'Search' }, { id: 'clubs', icon: Gift, label: 'Clubs' }, { id: 'ai', icon: Bot, label: 'Smart AI' }].map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-1.5 transition-all duration-300 min-w-[50px] ${activeTab === item.id ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:scale-105'}`}>
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-1.5 transition-all duration-300 min-w-[50px] ${activeTab === item.id ? 'text-indigo-600 dark:text-violet-400 scale-110' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 hover:scale-105'}`}>
               <item.icon size={24} className={activeTab === item.id ? 'stroke-[2.5px]' : ''} />
               <span className="text-[9px] sm:text-xs font-bold uppercase tracking-widest mt-1 opacity-80 whitespace-nowrap">{item.label}</span>
             </button>

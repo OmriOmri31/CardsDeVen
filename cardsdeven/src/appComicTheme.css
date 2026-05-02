@@ -1,0 +1,57 @@
+/* CardsDeVen global “comic / brutalist” shell — matches Smart AI chat energy */
+
+.cdv-comic-bg {
+  background: #e8ecf4;
+  color: #0f172a;
+}
+
+.dark .cdv-comic-bg {
+  background: #020617;
+  color: #e2e8f0;
+}
+
+.cdv-comic-header {
+  background: #ffffff;
+  border-bottom: 4px solid #0f172a;
+  box-shadow: 0 6px 0 0 #6366f1;
+}
+
+.dark .cdv-comic-header {
+  background: #0f172a;
+  border-bottom-color: #475569;
+  box-shadow: 0 6px 0 0 #4f46e5;
+}
+
+.cdv-comic-nav {
+  background: #ffffff !important;
+  border-top: 4px solid #0f172a !important;
+  box-shadow: 0 -6px 0 0 #6366f1 !important;
+}
+
+.dark .cdv-comic-nav {
+  background: #0f172a !important;
+  border-top-color: #475569 !important;
+  box-shadow: 0 -6px 0 0 #4f46e5 !important;
+}
+
+/* Thick offset panel — use with rounded-2xl + padding */
+.cdv-comic-panel {
+  border: 3px solid #1e293b;
+  background: #ffffff;
+  box-shadow: 8px 8px 0 #6366f1;
+}
+
+.dark .cdv-comic-panel {
+  border-color: #475569;
+  background: #0f172a;
+  box-shadow: 8px 8px 0 #4f46e5;
+}
+
+.cdv-comic-panel--dashed {
+  border-style: dashed;
+}
+
+.cdv-comic-title {
+  font-family: "Archivo Black", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}

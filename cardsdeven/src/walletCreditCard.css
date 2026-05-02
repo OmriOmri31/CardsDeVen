@@ -1,0 +1,138 @@
+/* Wallet plastic — adapted from Uiverse (Praashoo7), front only, scoped */
+
+.wallet-credit-card-wrap {
+  perspective: 1000px;
+  flex-shrink: 0;
+}
+
+.wallet-credit-card {
+  --wcc-bg: linear-gradient(135deg, #171717 0%, #262626 100%);
+  position: relative;
+  width: 240px;
+  height: 154px;
+  border-radius: 1rem;
+  font-size: 12px;
+  color: #fff;
+  background: var(--wcc-bg);
+  box-shadow:
+    rgba(0, 0, 0, 0.4) 0 2px 2px,
+    rgba(0, 0, 0, 0.3) 0 7px 13px -3px,
+    rgba(0, 0, 0, 0.2) 0 -1px 0 inset;
+  overflow: hidden;
+}
+
+.wallet-credit-card .wcc-chip {
+  position: absolute;
+  top: 2.3em;
+  left: 1.5em;
+  width: 2.85em;
+  height: 2.15em;
+  border-radius: 0.45em;
+  background: linear-gradient(145deg, #e8c87a 0%, #f5e6b8 40%, #b8922e 100%);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.wallet-credit-card .wcc-contactless {
+  position: absolute;
+  top: 3.35em;
+  left: 12.2em;
+  width: 1.2em;
+  height: 1.2em;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    -0.45em 0 0 -2px rgba(255, 255, 255, 0.35),
+    -0.9em 0 0 -3px rgba(255, 255, 255, 0.2);
+}
+
+.wallet-credit-card .wcc-debit-tag {
+  position: absolute;
+  top: 2em;
+  right: 1.4em;
+  font-size: 0.5em;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  opacity: 0.85;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.wallet-credit-card .wcc-mc {
+  position: absolute;
+  top: 6.5em;
+  right: 1.5em;
+  display: flex;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.wallet-credit-card .wcc-mc-circle {
+  width: 1.85em;
+  height: 1.85em;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+}
+
+.wallet-credit-card .wcc-mc-circle--red {
+  background: rgba(235, 0, 27, 0.92);
+  margin-right: -0.85em;
+}
+
+.wallet-credit-card .wcc-mc-circle--orange {
+  background: rgba(247, 158, 27, 0.92);
+}
+
+.wallet-credit-card .wcc-program {
+  position: absolute;
+  top: 6.85em;
+  right: 5.2em;
+  max-width: 9.5em;
+  font-size: 0.58em;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: "Archivo Black", ui-sans-serif, sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.wallet-credit-card .wcc-balance-label {
+  position: absolute;
+  top: 8.5em;
+  left: 1.5em;
+  font-size: 0.45em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  opacity: 0.75;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.wallet-credit-card .wcc-balance {
+  position: absolute;
+  top: 9.5em;
+  left: 1.45em;
+  font-size: 0.95em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.wallet-credit-card .wcc-limit {
+  position: absolute;
+  top: 12.5em;
+  left: 1.5em;
+  font-size: 0.48em;
+  font-weight: 600;
+  opacity: 0.8;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@media (min-width: 1024px) {
+  .wallet-credit-card-wrap--lg-scale {
+    transform: scale(1.06);
+    transform-origin: top left;
+  }
+}
