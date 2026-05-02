@@ -17,7 +17,8 @@ export const handler = async (event) => {
       return asString.length > maxChars ? `${asString.slice(0, maxChars)}\n...[truncated]` : asString;
     };
 
-    const optimizedSystemInstruction = truncate(systemInstruction, 32000);
+    // Prompt is mostly static rules + a retrieval chunk (not the full catalog).
+    const optimizedSystemInstruction = truncate(systemInstruction, 26000);
     const optimizedQuery = truncate(query, 1200);
     const optimizedHistory = (Array.isArray(history) ? history : [])
       .slice(-8)

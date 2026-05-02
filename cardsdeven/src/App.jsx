@@ -71,6 +71,39 @@ const CATEGORY_ALIASES = {
   "Other": ["other", "אחר", "שונות", "ספרים"]
 };
 
+/** Synonym groups for club search + AI retrieval (e.g. standup vs performer-only titles). */
+const CLUB_SEARCH_TOPIC_GROUPS = [
+  ['סטנדאפ', 'סטנד אפ', 'סטאנדאפ', 'סטנד', 'standup', 'stand-up', 'stand up', 'comedy', 'קומדיה', 'מופע סטנדאפ', 'מופע קומדיה', 'בידור'],
+];
+
+function expandClubSearchQueryTerms(raw) {
+  const qs = String(raw || '').toLowerCase().trim();
+  const terms = new Set();
+  if (qs.length) terms.add(qs);
+  for (const group of CLUB_SEARCH_TOPIC_GROUPS) {
+    const hit = group.some((t) => {
+      const tl = t.toLowerCase();
+      if (!tl) return false;
+      if (qs.includes(tl) || tl.includes(qs)) return true;
+      return qs.split(/[^\p{L}\p{N}]+/u).some((w) => w.length >= 2 && (tl.includes(w) || w.includes(tl)));
+    });
+    if (hit) group.forEach((t) => { if (t.length >= 1) terms.add(t.toLowerCase()); });
+  }
+  return [...terms];
+}
+
+function expandTokensFromTopicGroups(queryNorm, tokens) {
+  const extra = new Set();
+  for (const group of CLUB_SEARCH_TOPIC_GROUPS) {
+    const hit = group.some((t) => {
+      const tl = t.toLowerCase();
+      return queryNorm.includes(tl) || tokens.some((w) => w.length >= 2 && (tl.includes(w) || w.includes(tl)));
+    });
+    if (hit) group.forEach((t) => { if (t.length >= 1) extra.add(t.toLowerCase()); });
+  }
+  return [...extra];
+}
+
 // --- DOMAIN KNOWLEDGE: ISRAELI BENEFIT PROGRAMS ---
 const PROGRAMS = {
   HG: { id: 'HG', name: 'HappyGift Global', type: 'open_loop', color: 'bg-gradient-to-br from-pink-500 to-rose-600', description: 'Mastercard. Works almost everywhere.' },
@@ -147,7 +180,12 @@ function flattenBehatsdaaDealsFromNested(nested) {
           const title = deal?.title != null ? String(deal.title) : '';
           const price = deal?.price != null ? String(deal.price) : '';
           const url = typeof deal?.url === 'string' ? deal.url.trim() : '';
-          const d = `${title} (${price})`.replace(/\s+/g, ' ').trim();
+          const base = `${title} (${price})`.replace(/\s+/g, ' ').trim();
+          const sn = String(showName || '').trim();
+          let d = base;
+          if (sn && sn !== 'כללי' && !(title || '').toLowerCase().includes(sn.toLowerCase())) {
+            d = base ? `${sn}: ${base}` : sn;
+          }
           out.push({
             m: venue,
             c: 'BEHATSDAA',
@@ -174,26 +212,149 @@ function DealLink({ url, className, children }) {
   return <span className={className}>{children}</span>;
 }
 
-/** Compact lines for the AI system prompt (club-filtered; capped for token limits). */
-function buildDiscountCatalogPrompt(discountsData, userClubs, maxChars = 22000) {
-  const set = new Set(userClubs);
-  const rows = discountsData.filter((d) => set.has(d.c));
-  const lines = rows.map((d) => {
-    const u = (d.url || d.product_url || '').trim();
-    const m = String(d.m).replace(/\s+/g, ' ').trim();
-    const desc = String(d.d).replace(/\s+/g, ' ').trim();
-    return u ? `${d.c} | ${m} | ${desc} | ${u}` : `${d.c} | ${m} | ${desc}`;
-  });
-  let body = '';
-  let n = 0;
-  for (const line of lines) {
-    if (body.length + line.length + 1 > maxChars) break;
-    body += (body ? '\n' : '') + line;
-    n += 1;
+function normalizeDealMatchText(s) {
+  return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function tokenizeForDealSearch(text) {
+  const n = normalizeDealMatchText(text);
+  return [...new Set(n.split(/[^\p{L}\p{N}]+/u).filter((t) => t.length >= 2))];
+}
+
+function expandTokensFromCategoryAliases(queryNorm, tokens) {
+  const extra = new Set();
+  for (const aliases of Object.values(CATEGORY_ALIASES)) {
+    const hit = aliases.some((a) => {
+      const al = a.toLowerCase();
+      return queryNorm.includes(al) || tokens.some((t) => al.includes(t) || t.includes(al));
+    });
+    if (hit) aliases.forEach((a) => { if (a.length >= 2) extra.add(a.toLowerCase()); });
   }
-  const truncated = n < lines.length;
-  const head = `DEAL CATALOG (${n} of ${lines.length} deals for the user's active clubs${truncated ? '; list truncated—use these first' : ''}):`;
-  return body ? `${head}\n${body}` : 'No deals loaded for active clubs.';
+  return [...extra];
+}
+
+function formatDealLineForChat(d) {
+  const u = (d.url || d.product_url || '').trim();
+  const m = String(d.m).replace(/\s+/g, ' ').trim();
+  const desc = String(d.d).replace(/\s+/g, ' ').trim();
+  return u ? `${d.c} | ${m} | ${desc} | ${u}` : `${d.c} | ${m} | ${desc}`;
+}
+
+function dealKeyForDedup(d) {
+  return `${d.c}\0${d.m}\0${d.d}\0${d.product_id || ''}\0${d._bhKey || ''}`;
+}
+
+function uniqueDealsByKey(list) {
+  const seen = new Set();
+  const out = [];
+  for (const d of list) {
+    const k = dealKeyForDedup(d);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(d);
+  }
+  return out;
+}
+
+function scoreDealAgainstTokens(deal, tokens, expandedTokens) {
+  const blob = normalizeDealMatchText(`${deal.m} ${deal.d} ${deal.genre || ''}`);
+  let score = 0;
+  for (const t of tokens) {
+    if (t.length < 2) continue;
+    if (blob.includes(t)) score += Math.min(16, 5 + t.length);
+  }
+  for (const t of expandedTokens) {
+    if (tokens.includes(t)) continue;
+    if (t.length < 2) continue;
+    if (blob.includes(t)) score += 4;
+  }
+  return score;
+}
+
+function stratifiedDealSample(rows, userClubs, capPerClub) {
+  const buckets = {};
+  userClubs.forEach((c) => { buckets[c] = []; });
+  for (const d of rows) {
+    if (buckets[d.c]) buckets[d.c].push(d);
+  }
+  const out = [];
+  const taken = {};
+  userClubs.forEach((c) => { taken[c] = 0; });
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const c of userClubs) {
+      if (taken[c] >= capPerClub) continue;
+      const b = buckets[c];
+      if (taken[c] < b.length) {
+        out.push(b[taken[c]]);
+        taken[c] += 1;
+        progressed = true;
+      }
+    }
+  }
+  return out;
+}
+
+const BROAD_DEAL_QUERY_RE = /(מה\s+יש|כל\s+(ה)?מבצע|הכל|מבצעים|רשימה|סיכום|what\s+deals|all\s+(my\s+)?deals|show\s+me(\s+everything)?|everything|any\s+deals)/i;
+
+/**
+ * Lexical retrieval over in-memory discounts (same JSON as the UI). Small prompt chunk per turn.
+ */
+function retrieveRelevantDealsForChat(discountsData, userClubs, userText, priorUserTexts, maxBlockChars = 18000) {
+  const clubSet = new Set(userClubs);
+  const pool = discountsData.filter((d) => clubSet.has(d.c));
+
+  if (pool.length === 0) {
+    return 'RETRIEVED_DEALS: No deals loaded for the user\'s active clubs. Suggest they enable clubs or refresh data.';
+  }
+
+  const combined = [...(priorUserTexts || []), userText].filter(Boolean).join(' ');
+  const queryNorm = normalizeDealMatchText(combined);
+  const tokens = tokenizeForDealSearch(combined);
+  const expanded = [...new Set([...expandTokensFromCategoryAliases(queryNorm, tokens), ...expandTokensFromTopicGroups(queryNorm, tokens)])];
+
+  const isBroad = tokens.length === 0
+    || BROAD_DEAL_QUERY_RE.test(combined)
+    || (tokens.length <= 2 && combined.length < 48 && /מבצע|deal|discount|הנחה/i.test(combined));
+
+  let picked = [];
+  let mode = 'retrieval';
+
+  if (isBroad) {
+    mode = 'broad_sample';
+    picked = stratifiedDealSample(pool, userClubs, 20);
+  } else {
+    const scored = pool
+      .map((d) => ({ d, s: scoreDealAgainstTokens(d, tokens, expanded) }))
+      .sort((a, b) => b.s - a.s);
+    const minScore = 5;
+    picked = scored.filter((x) => x.s >= minScore).slice(0, 72).map((x) => x.d);
+    if (picked.length < 14) {
+      picked = scored.filter((x) => x.s > 0).slice(0, 48).map((x) => x.d);
+    }
+    if (picked.length < 10) {
+      const have = new Set(picked.map(dealKeyForDedup));
+      const filler = stratifiedDealSample(
+        pool.filter((d) => !have.has(dealKeyForDedup(d))),
+        userClubs,
+        8,
+      );
+      picked = [...picked, ...filler];
+    }
+  }
+
+  picked = uniqueDealsByKey(picked);
+  const lines = picked.map(formatDealLineForChat);
+  let body = lines.join('\n');
+  const header = mode === 'broad_sample'
+    ? `RETRIEVED_DEALS (broad question—stratified sample across clubs; NOT the full catalog—the Clubs tab lists everything):`
+    : `RETRIEVED_DEALS_FOR_THIS_QUESTION (use only these lines for concrete club deal facts; include URLs when recommending a specific sale):`;
+  let block = `${header}\n${body}`;
+  if (block.length > maxBlockChars) {
+    block = `${block.slice(0, maxBlockChars)}\n...[retrieval block trimmed for length]`;
+  }
+  return block;
 }
 
 /** Pais+ and other deals often use titles that are not exact KNOWN_MERCHANTS keys. */
@@ -343,6 +504,36 @@ const KNOWN_MERCHANTS = {
   "Tzomet Sfarim (צומת ספרים)": { cat: "Other", networks: ['TP', 'BM', 'GT'], aliases: ["tzomet sfarim", "צומת ספרים", "צומת"] },
   "Kravitz (קרביץ)": { cat: "Other", networks: ['TH', 'GT'], aliases: ["kravitz", "קרביץ"] },
 };
+
+function dealMatchesClubSearch(deal, clubSearchRaw) {
+  if (!clubSearchRaw?.trim()) return true;
+  const qs = clubSearchRaw.toLowerCase().trim();
+  const terms = expandClubSearchQueryTerms(clubSearchRaw);
+  const blob = `${deal.m} ${deal.d} ${deal.genre || ''}`.toLowerCase();
+  const blobCompact = blob.replace(/\s/g, '');
+  const termHit = terms.some((t) => {
+    if (t.length < 2) return false;
+    const tl = t.toLowerCase();
+    if (blob.includes(tl)) return true;
+    const compact = tl.replace(/\s/g, '');
+    if (compact.length >= 3 && blobCompact.includes(compact)) return true;
+    return false;
+  });
+  if (termHit) return true;
+
+  const cat = KNOWN_MERCHANTS[deal.m]?.cat || '';
+  const catAliases = CATEGORY_ALIASES[cat] || [];
+  const genreLo = deal.genre ? String(deal.genre).toLowerCase() : '';
+  return (
+    blob.includes(qs)
+    || cat.toLowerCase().includes(qs)
+    || (genreLo && (genreLo.includes(qs) || terms.some((t) => t.length >= 2 && genreLo.includes(t))))
+    || catAliases.some((a) => {
+      const al = a.toLowerCase();
+      return al.includes(qs) || qs.includes(al) || terms.some((t) => al.includes(t) || t.includes(al));
+    })
+  );
+}
 
 const getLogoPath = (merchantString) => {
   if (!merchantString) return '';
@@ -501,6 +692,39 @@ const detectInputLanguage = (text) => {
   return 'he';
 };
 
+function linkifyTextSegment(segment, keyPrefix) {
+  if (!segment) return null;
+  const re = /https?:\/\/[^\s\])>'"ֿ\]]+|www\.[^\s\])>'"ֿ\]]+/gi;
+  const out = [];
+  let last = 0;
+  let m;
+  let partIdx = 0;
+  while ((m = re.exec(segment)) !== null) {
+    if (m.index > last) {
+      out.push(<React.Fragment key={`${keyPrefix}-t-${partIdx++}`}>{segment.slice(last, m.index)}</React.Fragment>);
+    }
+    let href = m[0].replace(/[),.;:]+$/g, '');
+    const display = m[0];
+    if (href.toLowerCase().startsWith('www.')) href = `https://${href}`;
+    out.push(
+      <a
+        key={`${keyPrefix}-a-${partIdx++}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline text-sky-600 dark:text-sky-400 font-medium break-all"
+      >
+        {display.replace(/[),.;:]+$/g, '')}
+      </a>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < segment.length) {
+    out.push(<React.Fragment key={`${keyPrefix}-t-${partIdx}`}>{segment.slice(last)}</React.Fragment>);
+  }
+  return out.length ? out : segment;
+}
+
 const renderChatText = (text) => {
   if (!text) return null;
   const lines = String(text).split('\n');
@@ -511,13 +735,33 @@ const renderChatText = (text) => {
         {parts.map((part, partIdx) => {
           const isBold = part.startsWith('**') && part.endsWith('**') && part.length > 4;
           const content = isBold ? part.slice(2, -2) : part;
-          return isBold ? <strong key={`part-${lineIdx}-${partIdx}`}>{content}</strong> : <React.Fragment key={`part-${lineIdx}-${partIdx}`}>{content}</React.Fragment>;
+          if (isBold) {
+            return <strong key={`part-${lineIdx}-${partIdx}`}>{linkifyTextSegment(content, `b-${lineIdx}-${partIdx}`)}</strong>;
+          }
+          return <React.Fragment key={`part-${lineIdx}-${partIdx}`}>{linkifyTextSegment(content, `p-${lineIdx}-${partIdx}`)}</React.Fragment>;
         })}
         {lineIdx < lines.length - 1 && <br />}
       </React.Fragment>
     );
   });
 };
+
+const AI_CHAT_STORAGE_KEY = 'cardsdeven_ai_chat_v1';
+const DEFAULT_AI_WELCOME_TEXT = 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎';
+
+function loadAiChatFromStorage() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(AI_CHAT_STORAGE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (!Array.isArray(p) || p.length === 0) return null;
+    if (!p.every((m) => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string')) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
 
 const RULE_TYPES = {
   PERMANENT: { id: 'permanent', label: 'Permanent', icon: InfinityIcon },
@@ -569,7 +813,7 @@ export default function App() {
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
-  const [aiMessages, setAiMessages] = useState([{ role: 'model', text: 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎' }]);
+  const [aiMessages, setAiMessages] = useState(() => loadAiChatFromStorage() ?? [{ role: 'model', text: DEFAULT_AI_WELCOME_TEXT }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
@@ -641,6 +885,14 @@ export default function App() {
     if (isDarkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(aiMessages));
+    } catch {
+      /* private mode / quota */
+    }
+  }, [aiMessages]);
 
   const showToastMsg = (message, type = 'success') => {
     setToast({ visible: true, message, type });
@@ -785,7 +1037,8 @@ export default function App() {
     setAiInput('');
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
-    const dealCatalog = buildDiscountCatalogPrompt(discountsData, userClubs, 22000);
+    const priorUserTexts = aiMessages.filter((m) => m.role === 'user').slice(-2).map((m) => m.text);
+    const dealCatalog = retrieveRelevantDealsForChat(discountsData, userClubs, userText, priorUserTexts, 18000);
     const walletString = cardBalances.map((c) => {
       let line = `${c.name}:₪${c.remaining} (limit ₪${parseFloat(c.balance).toLocaleString()})`;
       if (c.ruleType === 'monthly') line += ' [MONTHLY: balance resets on the 1st; spending counts per calendar month]';
@@ -804,7 +1057,8 @@ USER'S DATA:
 - Wallet Cards (with balances): ${walletString || 'Empty'}
 - Future-dated purchase plans (scheduled): ${futurePlansSummary}
 - ${dealCatalog}
-- When the catalog does not name a chain explicitly, you may still map the user's request to well-known Israeli retail / dining / cinema brands and combine with their cards and any matching catalog lines.
+- For concrete מבצעים / prices / URLs, rely ONLY on the RETRIEVED block above—not on memory. If the user wants the full list, tell them to open the Clubs tab in the app.
+- When the retrieved lines do not name a chain explicitly, you may still map the request to well-known Israeli retail / dining / cinema brands and combine with their wallet cards.
 
 ### MONTHLY & FUTURE PLANNING RULES:
 - Cards marked MONTHLY reset to their full limit on the 1st of each calendar month; only expenses in that month (by "planned for" date or logged date) reduce that month's balance.
@@ -818,24 +1072,10 @@ USER'S DATA:
 - DO NOT be generic. Do not just list stores. Be a decisive, mathematical advisor.
 
 ### DECISION LOGIC:
-1. INTENT: What does the user want to buy?
-2. MATCH: Which merchants or deal lines in the DEAL CATALOG fit the request (and common Israeli brand names)?
-3. CALCULATE THE BEST DEAL: Prefer specific lines from the DEAL CATALOG (including URLs when present). Then check 'Wallet Cards' for sufficient balance.
-4. RECOMMEND: You MUST choose the absolute best combination of [Merchant] + [Discount] + [Specific Card to pay with].
-
-### STRICT RESPONSE FORMAT:
-Your response must ALWAYS follow this exact structure (use bold text for emphasis, but DO NOT use Markdown headers like # or ## to keep the chat UI clean):
-
-**Witty Opening:** 1-2 lines acknowledging the request with a fun, enthusiastic tone.
-
-🌟 **השילוב המנצח (The Winning Combo):** Tell them EXACTLY where to go, which discount to claim from their clubs, and exactly which card from their wallet to use. You MUST mention their specific card balance.
-*Example: "לך לפוקס. יש לך ב'בהצדעה' שובר של 150 ב-100 ש"ח, ותשלם עליו עם כרטיס ה-HappyGift שלך (יש לך שם 500 ש"ח!)."*
-
-💡 **עוד אופציות טובות (Alternative Options):** List 1-2 other relevant merchants from their data where they have valid cards or discounts.
-
-⚠️ **שים לב לתקציב (Budget Note - ONLY IF RELEVANT):** If the estimated cost of the item is likely higher than their available card balance, explicitly tell them they will need to do a "Split Payment" (לפצל תשלום) at the register with a regular credit card.
-
-🎯 **שאלה למיקוד (Call to Action):** End with one short question to narrow down their needs (e.g., "מחפש בגדי גברים או נשים?", "בא לך משלוח או לשבת במסעדה?").`;
+1. INTENT: What does the user want to buy or know?
+2. MATCH: Which lines in the RETRIEVED block fit the request (and common Israeli brand names when needed)?
+3. DEALS + PAYMENT: Prefer facts from RETRIEVED lines only. Match with 'Wallet Cards' balances. If a recommended line includes a URL, you MUST include the full https:// URL in your reply (copy from RETRIEVED) so the user can open the sale—every concrete sale you suggest should have its link if one appears in RETRIEVED.
+4. STYLE: Answer in a natural, conversational way. You may use **bold** sparingly for emphasis. Do NOT use a rigid section template. Do NOT end every reply with a forced question or "call to action"—only ask if it really helps.`;
     try {
       const responseText = await fetchGeminiAIResponse(userText, aiMessages, systemInstruction, abortControllerRef.current.signal);
       if (responseText) setAiMessages([...newMessages, { role: 'model', text: responseText }]);
@@ -1315,15 +1555,7 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                     <div className="text-center p-8"><Gift size={48} className="mx-auto mb-4 text-slate-200 dark:text-slate-800" /><p className="text-slate-500 font-medium">Select a club above to see your available deals.</p></div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {discountsData.filter((d) => {
-                        if (!userClubs.includes(d.c)) return false;
-                        if (!clubSearch) return true;
-                        const qs = clubSearch.toLowerCase();
-                        const cat = KNOWN_MERCHANTS[d.m]?.cat || "";
-                        const catAliases = CATEGORY_ALIASES[cat] || [];
-                        const genreMatch = d.genre && String(d.genre).toLowerCase().includes(qs);
-                        return d.m.toLowerCase().includes(qs) || d.d.toLowerCase().includes(qs) || cat.toLowerCase().includes(qs) || genreMatch || catAliases.some((a) => a.includes(qs));
-                      }).map((deal, idx) => (
+                      {discountsData.filter((d) => userClubs.includes(d.c) && dealMatchesClubSearch(d, clubSearch)).map((deal, idx) => (
                         <div key={deal.product_id ? `pais-${deal.product_id}` : deal._bhKey || `${deal.c}-${idx}-${deal.m.slice(0, 40)}`} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
                           <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat || 'Other'} className="w-12 h-12 rounded-lg" />
                           <div>
@@ -1344,7 +1576,7 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[80vh] flex flex-col">
               <div className="flex justify-between items-end">
                 <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Assistant</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Ask me what to buy, and I'll find the best deal.</p></div>
-                <button onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); setAiMessages([{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }]); setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
+                <button type="button" onClick={() => { if (abortControllerRef.current) abortControllerRef.current.abort(); const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }]; setAiMessages(fresh); try { localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh)); } catch { /* ignore */ } setIsAiTyping(false); }} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Clear Chat History"><Trash2 size={20} /></button>
               </div>
               <div className="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
@@ -1360,7 +1592,7 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                         <div className={`text-[10px] uppercase tracking-wider mb-1.5 ${msg.role === 'user' ? 'text-blue-100' : 'text-slate-400 dark:text-slate-500'}`}>
                           {msg.role === 'user' ? 'You' : 'Advisor'}
                         </div>
-                        <div className="whitespace-pre-wrap">{renderChatText(msg.text)}</div>
+                        <div className="whitespace-pre-wrap break-words" dir="auto">{renderChatText(msg.text)}</div>
                       </div>
                     </div>
                   ))}

@@ -23,6 +23,7 @@ DATA_JSON_PATH = os.path.join(_REPO_ROOT, "cardsdeven", "public", "data.json")
 # Gemini: max 100 texts per embed_content call; incremental cache to save daily quota.
 _EMBED_BATCH = min(100, max(1, int(os.environ.get("BEHATSDAA_EMBED_BATCH_SIZE", "100"))))
 _EMBED_SLEEP = max(0.0, float(os.environ.get("BEHATSDAA_EMBED_SLEEP_SEC", "2")))
+# Listing cards often use JS navigation (no href). Click + capture URL; set BEHATSDAA_SKIP_URL_CLICKES=1 to skip (faster, urls empty).
 
 # Load .env from repo root and from cardsdeven/ (GEMINI_API_KEY, BEHATSDAA_ID, etc.)
 load_dotenv(os.path.join(_REPO_ROOT, '.env'))
@@ -206,7 +207,12 @@ def flatten_behatsdaa_deals_for_app(nested_data):
                     title = deal.get("title") or ""
                     price = deal.get("price") or ""
                     url = (deal.get("url") or "").strip()
-                    d = " ".join(f"{title} ({price})".split()).strip()
+                    base = " ".join(f"{title} ({price})".split()).strip()
+                    sn = (show_name or "").strip()
+                    if sn and sn != "כללי" and sn.lower() not in (title or "").lower():
+                        d = f"{sn}: {base}".strip() if base else sn
+                    else:
+                        d = base or title or price or "Deal"
                     row = {
                         "m": venue,
                         "c": "BEHATSDAA",
@@ -374,6 +380,120 @@ def generate_embeddings(nested_data):
 # ==========================================
 # 4. PAGE SCRAPING LOGIC
 # ==========================================
+#
+# Outputs:
+# - cardsdeven/public/data.json — nested "data" + "vectors" (embeddings cache for the scraper). Keep locally; gitignored.
+# - cardsdeven/public/behatsdaa_deals.json — flat "deals" for the web app. Commit / deploy this.
+
+def _normalize_behatsdaa_href(href: str) -> str:
+    href = (href or "").strip()
+    if not href:
+        return ""
+    if href.startswith("/"):
+        return BEHATSDAA_ORIGIN.rstrip("/") + href
+    if not href.startswith("http"):
+        return BEHATSDAA_ORIGIN.rstrip("/") + "/" + href.lstrip("/")
+    return href
+
+
+def _extract_href_from_dom(card) -> str:
+    href = ""
+    try:
+        href = card.evaluate(
+            """(el) => {
+              const bad = (h) => !h || h === '#' || h.toLowerCase().startsWith('javascript:');
+              const pick = (x) => { const h = (x || '').trim(); return bad(h) ? '' : h; };
+              const root = el.closest ? (el.closest('.categories-container-item') || el) : el;
+              if (root && root.querySelectorAll) {
+                for (const a of root.querySelectorAll('a[href]')) {
+                  const h = pick(a.getAttribute('href'));
+                  if (h) return h;
+                }
+              }
+              let p = root;
+              for (let i = 0; i < 12 && p; i++) {
+                if (p.tagName === 'A') {
+                  const h = pick(p.getAttribute('href'));
+                  if (h) return h;
+                }
+                p = p.parentElement;
+              }
+              return '';
+            }"""
+        )
+        href = (href or "").strip()
+    except Exception:
+        try:
+            al = card.locator("a[href]")
+            if al.count() > 0:
+                href = (al.first.get_attribute("href") or "").strip()
+        except Exception:
+            pass
+    return _normalize_behatsdaa_href(href)
+
+
+def _capture_sale_url_via_click(page, card, listing_url: str) -> str:
+    """Open sale via click, read window URL, return to listing. For JS/routed cards without href."""
+    if os.environ.get("BEHATSDAA_SKIP_URL_CLICKS", "").strip().lower() in ("1", "true", "yes"):
+        return ""
+    before = page.url
+    try:
+        card.scroll_into_view_if_needed(timeout=5000)
+        page.wait_for_timeout(150)
+    except Exception:
+        pass
+
+    captured = None
+    try:
+        with page.expect_navigation(timeout=14000, wait_until="domcontentloaded"):
+            card.click(timeout=7000)
+        captured = (page.url or "").strip()
+    except Exception:
+        n_before = len(page.context.pages)
+        try:
+            card.click(timeout=7000, force=True)
+            page.wait_for_timeout(600)
+            if len(page.context.pages) > n_before:
+                np = page.context.pages[-1]
+                try:
+                    np.wait_for_load_state("domcontentloaded", timeout=15000)
+                    captured = (np.url or "").strip()
+                finally:
+                    np.close()
+                page.bring_to_front()
+                if captured and captured.startswith("http"):
+                    return _normalize_behatsdaa_href(captured)
+            for _ in range(35):
+                u = (page.url or "").strip()
+                if u and u != before:
+                    captured = u
+                    break
+                page.wait_for_timeout(200)
+        except Exception:
+            pass
+
+    if not captured or not captured.startswith("http"):
+        if (page.url or "").strip() != before:
+            try:
+                page.go_back(wait_until="domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+        return ""
+
+    try:
+        page.go_back(wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_load_state("networkidle", timeout=35000)
+        page.wait_for_timeout(500)
+    except Exception as exc:
+        print(f"  go_back after URL capture failed ({exc}); reloading listing …")
+        try:
+            page.goto(listing_url, wait_until="networkidle", timeout=45000)
+            page.wait_for_timeout(800)
+        except Exception:
+            pass
+
+    return _normalize_behatsdaa_href(captured)
+
 
 def scrape_page_data(page, url, master_data):
     print(f"\nScanning: {url}")
@@ -394,52 +514,23 @@ def scrape_page_data(page, url, master_data):
 
     try:
         page.wait_for_timeout(3000)
-        cards = page.locator(".categories-container-item").all()
-        print(f"Found {len(cards)} sales on this page.")
-        
-        for card in cards:
+        listing_url = page.url
+        n = page.locator(".categories-container-item").count()
+        print(f"Found {n} sales on this page.")
+
+        for idx in range(n):
+            card = page.locator(".categories-container-item").nth(idx)
             try:
                 title = card.locator(".categories-container-item-header .medium-font").inner_text(timeout=1000).strip()
                 price = card.locator(".categories-container-item-price .price-text").inner_text(timeout=1000).strip()
                 address = card.locator(".categories-container-item-location .location-name-text").inner_text(timeout=1000).strip()
 
-                href = ""
-                try:
-                    href = card.evaluate(
-                        """(el) => {
-                          const bad = (h) => !h || h === '#' || h.toLowerCase().startsWith('javascript:');
-                          const pick = (x) => { const h = (x || '').trim(); return bad(h) ? '' : h; };
-                          const root = el.closest ? (el.closest('.categories-container-item') || el) : el;
-                          if (root && root.querySelectorAll) {
-                            for (const a of root.querySelectorAll('a[href]')) {
-                              const h = pick(a.getAttribute('href'));
-                              if (h) return h;
-                            }
-                          }
-                          let p = root;
-                          for (let i = 0; i < 12 && p; i++) {
-                            if (p.tagName === 'A') {
-                              const h = pick(p.getAttribute('href'));
-                              if (h) return h;
-                            }
-                            p = p.parentElement;
-                          }
-                          return '';
-                        }"""
-                    )
-                    href = (href or "").strip()
-                except Exception:
-                    try:
-                        al = card.locator("a[href]")
-                        if al.count() > 0:
-                            href = (al.first.get_attribute("href") or "").strip()
-                    except Exception:
-                        pass
-                if href.startswith("/"):
-                    href = BEHATSDAA_ORIGIN.rstrip("/") + href
-                elif href and not href.startswith("http"):
-                    href = BEHATSDAA_ORIGIN.rstrip("/") + "/" + href.lstrip("/")
-                
+                href = _extract_href_from_dom(card)
+                if not href:
+                    if idx == 0 or (idx + 1) % 25 == 0:
+                        print(f"  Capturing URL via click ({idx + 1}/{n}) …")
+                    href = _capture_sale_url_via_click(page, card, listing_url)
+
                 img_locator = card.locator(".categories-container-item-img").first
                 image_text = img_locator.get_attribute("title", timeout=1000)
                 if not image_text:
