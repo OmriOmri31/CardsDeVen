@@ -4,7 +4,7 @@ import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, onAuthStateChanged, signInAnonymously
 } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, deleteField } from 'firebase/firestore';
 import {
   clubSearchTermsIncludeStandupTopic,
   dealBlobMentionsStandupComedian,
@@ -138,6 +138,26 @@ const WALLET_CARD_CHROME = {
   FLEX: 'linear-gradient(135deg, #6366f1 0%, #6d28d9 100%)',
   CUSTOM: 'linear-gradient(135deg, #94a3b8 0%, #475569 100%)',
 };
+
+function hexToRgb(hex) {
+  const h = String(hex || '').trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  const n = parseInt(h, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+/** Builds a darkened gradient for wallet plastic from a single #RRGGBB color. */
+function buildPlasticGradientFromHex(hex) {
+  const raw = String(hex || '').trim();
+  const normalized = raw.startsWith('#') ? raw : (raw ? `#${raw}` : '');
+  const rgb = hexToRgb(normalized);
+  if (!rgb) return null;
+  const { r, g, b } = rgb;
+  const r2 = Math.round(r * 0.52);
+  const g2 = Math.round(g * 0.52);
+  const b2 = Math.round(b * 0.52);
+  return `linear-gradient(135deg, ${normalized} 0%, rgb(${r2},${g2},${b2}) 100%)`;
+}
 
 const CLUBS = {
   BEHATSDAA: { id: 'BEHATSDAA', name: 'בהצדעה', color: 'bg-blue-600' },
@@ -963,21 +983,19 @@ function renderAdvisorMessage(text, lang) {
 }
 
 function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient }) {
-  const short = programName.length > 24 ? `${programName.slice(0, 23)}…` : programName;
+  const short = programName.length > 22 ? `${programName.slice(0, 21)}…` : programName;
   return (
     <div className="wallet-credit-card-wrap wallet-credit-card-wrap--lg-scale">
       <div className="wallet-credit-card" style={{ '--wcc-bg': chromeGradient }}>
         <div className="wcc-chip" aria-hidden />
         <div className="wcc-contactless" aria-hidden />
-        <div className="wcc-debit-tag">BENEFIT</div>
         <div className="wcc-program" title={programName}>{short}</div>
         <div className="wcc-mc" aria-hidden>
           <span className="wcc-mc-circle wcc-mc-circle--red" />
           <span className="wcc-mc-circle wcc-mc-circle--orange" />
         </div>
-        <div className="wcc-balance-label">AVAILABLE</div>
         <div className="wcc-balance">₪{balanceRemaining.toLocaleString()}</div>
-        <div className="wcc-limit">LIMIT ₪{balanceLimit.toLocaleString()}</div>
+        <div className="wcc-limit">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
       </div>
     </div>
   );
@@ -1127,7 +1145,7 @@ export default function App() {
   const quickSpendAnchorCardIdRef = useRef(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
-  const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] });
+  const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [newExpense, setNewExpense] = useState({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
@@ -1432,7 +1450,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     }
   };
 
-  const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [] }); setEditingCardId(null); setShowCardForm(false); };
+  const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '' }); setEditingCardId(null); setShowCardForm(false); };
   const resetExpenseForm = () => {
     quickSpendAnchorCardIdRef.current = null;
     setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
@@ -1450,6 +1468,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       ruleType: newCard.ruleType, expiryDate: newCard.ruleType === 'expires' ? newCard.expiryDate : '',
       categories: newCard.programId === 'CUSTOM' ? newCard.categories : [], color: program.color, updatedAt: new Date().toISOString()
     };
+    const hexRaw = (newCard.plasticAccentHex || '').trim();
+    const normalizedHex = hexRaw.startsWith('#') ? hexRaw : (hexRaw ? `#${hexRaw}` : '');
+    if (hexToRgb(normalizedHex)) cardData.plasticAccentHex = normalizedHex;
+    else if (editingCardId) cardData.plasticAccentHex = deleteField();
     if (editingCardId) await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), editingCardId), cardData);
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'cards')), cardData);
     showToastMsg(editingCardId ? 'Card updated' : 'Card added to wallet');
@@ -1516,7 +1538,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   const deleteCard = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), id)); showToastMsg('Card removed'); } };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
-  const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [] }); setEditingCardId(card.id); setShowCardForm(true); };
+  const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [], plasticAccentHex: card.plasticAccentHex || '' }); setEditingCardId(card.id); setShowCardForm(true); };
   const startEditExpense = (expense) => {
     quickSpendAnchorCardIdRef.current = null;
     const expenseCategories = expenseCategoriesForDisplay(expense);
@@ -1735,7 +1757,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   {cardBalances.map((card) => {
                     const ruleData = RULE_TYPES[card.ruleType?.toUpperCase()] || RULE_TYPES.PERMANENT;
                     const progData = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
-                    const chromeGradient = WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM;
+                    const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
                     const percentRemaining = Math.max(0, Math.min(100, (card.remaining / parseFloat(card.balance)) * 100));
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
                     return (
@@ -2135,6 +2157,43 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Display Name</label><input type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" placeholder="e.g. My Cibus Card" /></div>
               <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Total Limit (₪)</label><input type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono font-bold text-lg" placeholder="0.00" /></div>
+            </div>
+
+            <div className="p-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  id="cdv-custom-plastic"
+                  type="checkbox"
+                  checked={!!newCard.plasticAccentHex}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      const cur = (newCard.plasticAccentHex || '').trim();
+                      const norm = cur.startsWith('#') ? cur : (cur ? `#${cur}` : '');
+                      setNewCard({ ...newCard, plasticAccentHex: hexToRgb(norm) ? norm : '#6366f1' });
+                    } else setNewCard({ ...newCard, plasticAccentHex: '' });
+                  }}
+                  className="w-5 h-5 rounded border-slate-400 text-indigo-600 focus:ring-indigo-500"
+                />
+                <label htmlFor="cdv-custom-plastic" className="font-bold text-slate-800 dark:text-slate-200 cursor-pointer">Custom card color</label>
+              </div>
+              {newCard.plasticAccentHex ? (
+                <div className="flex flex-wrap items-center gap-4">
+                  <input
+                    type="color"
+                    aria-label="Plastic gradient base color"
+                    value={(() => {
+                      const c = (newCard.plasticAccentHex || '').trim();
+                      const n = c.startsWith('#') ? c : `#${c}`;
+                      return hexToRgb(n) ? n : '#6366f1';
+                    })()}
+                    onChange={(ev) => setNewCard({ ...newCard, plasticAccentHex: ev.target.value })}
+                    className="h-12 w-24 cursor-pointer rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-transparent"
+                  />
+                  <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xs">Overrides the program default on the wallet plastic. Uncheck to use the built-in program colors.</p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-600 dark:text-slate-400">Wallet preview uses each program’s default plastic gradient.</p>
+              )}
             </div>
 
             <div>

@@ -8,7 +8,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Abraham', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['Merta Sans', 'Abraham', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
     },
   },

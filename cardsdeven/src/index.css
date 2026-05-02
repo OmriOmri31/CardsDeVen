@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* English / Latin: Merta Sans (Bold + Black demos). Hebrew still uses Abraham when glyphs are missing. */
+@font-face {
+  font-family: 'Merta Sans';
+  src: url('/fonts/MertaSansDemo-Bold.ttf') format('truetype');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Merta Sans';
+  src: url('/fonts/MertaSansDemo-Black.ttf') format('truetype');
+  font-weight: 800 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: 'Abraham';
   src: url('/fonts/Abraham-Regular.ttf') format('truetype');
@@ -12,6 +28,6 @@
 
 @layer base {
   html {
-    font-family: 'Abraham', ui-sans-serif, system-ui, sans-serif;
+    font-family: 'Merta Sans', 'Abraham', ui-sans-serif, system-ui, sans-serif;
   }
 }
