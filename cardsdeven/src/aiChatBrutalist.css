@@ -13,6 +13,7 @@
   font-size: 12px;
   margin-left: auto;
   margin-right: auto;
+  isolation: isolate;
 }
 
 .ai-chat-brutalist .wheel,
@@ -33,7 +34,7 @@
 
 .ai-chat-brutalist .wheel {
   background: radial-gradient(100% 100% at center, hsla(0, 0%, 60%, 0) 47.8%, hsl(0, 0%, 60%) 48%);
-  z-index: 2;
+  z-index: 1;
 }
 
 .ai-chat-brutalist .hamster {
@@ -44,7 +45,8 @@
   height: 3.75em;
   transform: rotate(4deg) translate(-0.8em, 1.85em);
   transform-origin: 50% 0;
-  z-index: 1;
+  transform-style: preserve-3d;
+  z-index: 2;
 }
 
 .ai-chat-brutalist .hamster__head {
@@ -170,6 +172,7 @@
   background:
     radial-gradient(100% 100% at center, hsl(0, 0%, 60%) 4.8%, hsla(0, 0%, 60%, 0) 5%),
     linear-gradient(hsla(0, 0%, 55%, 0) 46.9%, hsl(0, 0%, 65%) 47% 52.9%, hsla(0, 0%, 65%, 0) 53%) 50% 50% / 99% 99% no-repeat;
+  z-index: 3;
 }
 
 @keyframes ai-loader-hamster {
@@ -336,25 +339,25 @@
   font-size: 0.8125rem;
   line-height: 1.45;
   text-align: center;
-  color: #000;
+  color: #e2e8f0;
   max-width: 22rem;
   margin: 1rem auto 0;
   padding: 0 0.5rem;
 }
 
 .ai-chat-brutalist .ai-loader-card {
-  border: 4px solid #000;
-  background: #fff;
-  box-shadow: 8px 8px 0 #000;
+  border: 3px solid #475569;
+  background: #0f172a;
+  box-shadow: 6px 6px 0 #6366f1;
   padding: 1.25rem 1rem 1.5rem;
   max-width: 24rem;
 }
 
-/* Brutalist shell */
+/* Brutalist shell — dark slate + indigo/violet (matches app header vibe) */
 .ai-chat-brutalist .ai-brutalist-shell {
-  border: 4px solid #000;
-  background: #fff;
-  box-shadow: 12px 12px 0 #000;
+  border: 3px solid #334155;
+  background: #020617;
+  box-shadow: 10px 10px 0 #4f46e5;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -366,16 +369,16 @@
   font-size: 0.75rem;
   font-weight: 700;
   padding: 0.65rem 1rem;
-  background: #000;
-  color: #fff;
-  border-bottom: 4px solid #000;
+  background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%);
+  color: #f8fafc;
+  border-bottom: 3px solid #312e81;
 }
 
 .ai-chat-brutalist .ai-brutalist-scroll {
   flex: 1;
   overflow-y: auto;
   padding: 1rem 1rem 1.25rem;
-  background: #e8e8e8;
+  background: #0f172a;
   min-height: 0;
 }
 
@@ -383,7 +386,7 @@
 .ai-chat-brutalist .ai-brutalist-bubble {
   max-width: 88%;
   padding: 0.85rem 1rem;
-  border: 4px solid #000;
+  border: 3px solid #475569;
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -395,15 +398,15 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble--model {
-  background: #fff;
-  box-shadow: 6px 6px 0 #4a90e2;
-  color: #000;
+  background: #1e293b;
+  box-shadow: 5px 5px 0 #6366f1;
+  color: #f1f5f9;
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble--user {
-  background: #4a90e2;
-  color: #fff;
-  box-shadow: 6px 6px 0 #000;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #f8fafc;
+  box-shadow: 5px 5px 0 #312e81;
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble .ai-brutalist-meta {
@@ -420,7 +423,7 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble--model .ai-brutalist-meta {
-  color: #444;
+  color: #a5b4fc;
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble a {
@@ -434,21 +437,22 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble--model a {
-  color: #0b4f9c !important;
+  color: #a5b4fc !important;
 }
 
 .ai-chat-brutalist .ai-brutalist-avatar {
   width: 2.25rem;
   height: 2.25rem;
-  border: 3px solid #000;
-  background: #fff;
+  border: 3px solid #475569;
+  background: #1e293b;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   margin-top: 0.25rem;
   margin-right: 0.75rem;
-  box-shadow: 3px 3px 0 #000;
+  box-shadow: 3px 3px 0 #6366f1;
+  color: #c4b5fd;
 }
 
 .ai-chat-brutalist .ai-brutalist-header-row {
@@ -463,36 +467,37 @@
   font-family: "Archivo Black", sans-serif;
   font-size: 1.75rem;
   line-height: 1.1;
-  color: #000;
+  color: #f8fafc;
   letter-spacing: -0.02em;
 }
 
 .ai-chat-brutalist .ai-brutalist-sub {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #333;
+  color: #94a3b8;
   margin-top: 0.35rem;
 }
 
 .ai-chat-brutalist .ai-brutalist-clear {
-  border: 4px solid #000;
-  background: #fff;
+  border: 3px solid #475569;
+  background: #1e293b;
   padding: 0.5rem 0.65rem;
   cursor: pointer;
-  box-shadow: 4px 4px 0 #000;
+  box-shadow: 4px 4px 0 #6366f1;
+  color: #e2e8f0;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .ai-chat-brutalist .ai-brutalist-clear:hover {
   transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0 #000;
+  box-shadow: 2px 2px 0 #6366f1;
 }
 
 /* Input area */
 .ai-chat-brutalist .ai-brutalist-form-footer {
   padding: 1rem;
-  background: #d8d8d8;
-  border-top: 4px solid #000;
+  background: #020617;
+  border-top: 3px solid #334155;
 }
 
 .ai-chat-brutalist .brutalist-container {
@@ -506,30 +511,9 @@
   width: 100%;
 }
 
-.ai-chat-brutalist .brutalist-input-wrap:focus-within::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #000;
-  z-index: 0;
-  pointer-events: none;
-  clip-path: inset(0 100% 0 0);
-  animation: ai-chat-glitch-slice 4s steps(2, end) infinite;
-}
-
+.ai-chat-brutalist .brutalist-input-wrap:focus-within::before,
 .ai-chat-brutalist .brutalist-input-wrap:focus-within::after {
-  content: "";
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: #fff;
-  z-index: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .ai-chat-brutalist .brutalist-input {
@@ -539,14 +523,16 @@
   padding: 15px 3.5rem 15px 15px;
   font-size: 1rem;
   font-weight: 700;
-  color: #000;
-  background-color: #fff;
-  border: 4px solid #000;
+  color: #f1f5f9;
+  background-color: #1e293b;
+  border: 3px solid #475569;
   overflow: hidden;
   border-radius: 0;
   outline: none;
-  transition: box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  box-shadow: 5px 5px 0 #000, 10px 10px 0 #4a90e2;
+  transition:
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+  box-shadow: 4px 4px 0 #312e81, 8px 8px 0 #6366f1;
 }
 
 .ai-chat-brutalist .brutalist-input:disabled {
@@ -555,33 +541,15 @@
 }
 
 .ai-chat-brutalist .brutalist-input-wrap:focus-within .brutalist-input {
-  animation:
-    ai-chat-focus-pulse 4s cubic-bezier(0.25, 0.8, 0.25, 1) infinite,
-    ai-chat-glitch 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) infinite;
+  animation: ai-chat-focus-pulse-dark 5s ease-in-out infinite;
 }
 
 .ai-chat-brutalist .smooth-type::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  background: linear-gradient(90deg, #fff 0%, rgba(255, 255, 255, 0) 100%);
-  background-size: 300px 100%;
-  z-index: 2;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.ai-chat-brutalist .brutalist-input-wrap:focus-within.smooth-type::before {
-  opacity: 1;
-  animation: ai-chat-type-gradient 2s linear infinite;
+  display: none;
 }
 
 .ai-chat-brutalist .brutalist-input::placeholder {
-  color: #888;
+  color: #64748b;
   transition: color 0.3s ease;
 }
 
@@ -595,18 +563,19 @@
   top: -38px;
   font-size: 0.75rem;
   font-weight: 800;
-  color: #fff;
-  background-color: #000;
+  color: #f8fafc;
+  background-color: #312e81;
   padding: 5px 10px;
   transform: rotate(-1deg);
   z-index: 3;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   letter-spacing: 0.06em;
+  border: 2px solid #6366f1;
 }
 
 .ai-chat-brutalist .brutalist-input:focus + .brutalist-label {
-  transform: rotate(0deg) scale(1.05);
-  background-color: #4a90e2;
+  transform: rotate(0deg) scale(1.02);
+  background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%);
 }
 
 .ai-chat-brutalist .brutalist-send-btn {
@@ -615,22 +584,22 @@
   top: 50%;
   transform: translateY(-50%);
   z-index: 4;
-  border: 3px solid #000;
-  background: #000;
-  color: #fff;
+  border: 3px solid #312e81;
+  background: #4f46e5;
+  color: #f8fafc;
   padding: 0.45rem 0.55rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 3px 3px 0 #4a90e2;
+  box-shadow: 3px 3px 0 #7c3aed;
   transition:
     transform 0.12s ease,
     background 0.12s ease;
 }
 
 .ai-chat-brutalist .brutalist-send-btn:hover:not(:disabled) {
-  background: #4a90e2;
+  background: #7c3aed;
 }
 
 .ai-chat-brutalist .brutalist-send-btn:disabled {
@@ -638,78 +607,14 @@
   cursor: not-allowed;
 }
 
-@keyframes ai-chat-glitch {
-  0% {
-    transform: translate(0);
-  }
-  20% {
-    transform: translate(-2px, 2px);
-  }
-  40% {
-    transform: translate(-2px, -2px);
-  }
-  60% {
-    transform: translate(2px, 2px);
-  }
-  80% {
-    transform: translate(2px, -2px);
-  }
-  100% {
-    transform: translate(0);
-  }
-}
-
-@keyframes ai-chat-glitch-slice {
-  0% {
-    clip-path: inset(0 100% 0 0);
-  }
-  10% {
-    clip-path: inset(0 5% 0 0);
-  }
-  20% {
-    clip-path: inset(0 80% 0 0);
-  }
-  30% {
-    clip-path: inset(0 10% 0 0);
-  }
-  40% {
-    clip-path: inset(0 50% 0 0);
-  }
-  50% {
-    clip-path: inset(0 30% 0 0);
-  }
-  60% {
-    clip-path: inset(0 70% 0 0);
-  }
-  70% {
-    clip-path: inset(0 15% 0 0);
-  }
-  80% {
-    clip-path: inset(0 90% 0 0);
-  }
-  90% {
-    clip-path: inset(0 5% 0 0);
-  }
-  100% {
-    clip-path: inset(0 100% 0 0);
-  }
-}
-
-@keyframes ai-chat-focus-pulse {
+@keyframes ai-chat-focus-pulse-dark {
   0%,
   100% {
-    border-color: #000;
+    border-color: #475569;
+    box-shadow: 4px 4px 0 #312e81, 8px 8px 0 #6366f1;
   }
   50% {
-    border-color: #4a90e2;
-  }
-}
-
-@keyframes ai-chat-type-gradient {
-  0% {
-    background-position: 300px 0;
-  }
-  100% {
-    background-position: 0 0;
+    border-color: #818cf8;
+    box-shadow: 4px 4px 0 #4338ca, 8px 8px 0 #a78bfa;
   }
 }

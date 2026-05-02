@@ -1145,6 +1145,23 @@ export default function App() {
     if (activeTab === 'ai') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [aiMessages, activeTab]);
 
+  useEffect(() => {
+    if (!isAiTyping) return undefined;
+    const tick = () => {
+      setAiLoadingQuote((prev) => {
+        let next = AI_LOADER_QUOTES[Math.floor(Math.random() * AI_LOADER_QUOTES.length)];
+        let guard = 0;
+        while (next === prev && AI_LOADER_QUOTES.length > 1 && guard < 12) {
+          next = AI_LOADER_QUOTES[Math.floor(Math.random() * AI_LOADER_QUOTES.length)];
+          guard += 1;
+        }
+        return next;
+      });
+    };
+    const id = window.setInterval(tick, 10000);
+    return () => window.clearInterval(id);
+  }, [isAiTyping]);
+
   const handleSendAI = async (e) => {
     e.preventDefault();
     if (!aiInput.trim() || isAiTyping || aiRequestInFlightRef.current) return;
@@ -1193,6 +1210,11 @@ USER'S DATA:
 - Reply natively in the EXACT language the user used.
 - Be highly energetic, direct, and slightly humorous (Israeli style). Use emojis appropriately (e.g., "מישהו פה מתכנן חגיגה 🍕", "ברור, בוא נארגן לך הופעה פצצה לחתונה 👔").
 - DO NOT be generic. Do not just list stores. Be a decisive, mathematical advisor.
+
+### RESPONSE LENGTH & LIST DEPTH:
+- If the user asks for a **suggestion**, **recommendation**, "what's good", "a good …", "give me an idea", one best pick, or similar—and they did **not** ask for the full list—give about **3** strong options (with brief why + links from RETRIEVED). Then offer more in one short line (e.g. "רוצה עוד אופציות?" / "Want more options?").
+- If they ask for **all**, **every**, **full/complete list**, **everything in [category]**, **הכל**, **רשימה מלאה**, **כל ה…**, **כל המופעים**, or clearly want exhaustive coverage—list **everything** relevant from RETRIEVED without capping count.
+- If intent is mixed, follow the strongest signal; if still unclear, use ~3 options and offer to expand.
 
 ### DECISION LOGIC:
 1. INTENT: What does the user want to buy or know?
@@ -1787,7 +1809,7 @@ USER'S DATA:
                   className="ai-brutalist-clear"
                   title="Clear Chat History"
                 >
-                  <Trash2 size={20} className="text-slate-900" />
+                  <Trash2 size={20} className="text-violet-100" />
                 </button>
               </div>
               <div className="ai-brutalist-shell min-h-0">
@@ -1797,7 +1819,7 @@ USER'S DATA:
                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {msg.role === 'model' && (
                         <div className="ai-brutalist-avatar">
-                          <Bot size={16} className="text-slate-900" aria-hidden />
+                          <Bot size={16} className="text-violet-200" aria-hidden />
                         </div>
                       )}
                       <div
@@ -1812,7 +1834,7 @@ USER'S DATA:
                   {isAiTyping && (
                     <div className="flex justify-start items-start gap-2">
                       <div className="ai-brutalist-avatar">
-                        <Bot size={16} className="text-slate-900 opacity-50" aria-hidden />
+                        <Bot size={16} className="text-violet-200 opacity-60" aria-hidden />
                       </div>
                       <div className="ai-loader-card">
                         <HamsterWheelLoader />
