@@ -222,6 +222,7 @@ def scrape_category_page(page, category_url: str, genre: str) -> list[dict]:
             }
             if product_url:
                 row["product_url"] = product_url
+                row["url"] = product_url
             if data_id:
                 row["product_id"] = data_id
 
@@ -263,7 +264,8 @@ def embed_md_fallback_key(deal: dict) -> str:
 
 
 def _vector_row(deal: dict, vec: list, cache_key: str, et: str) -> dict:
-    return {
+    u = deal.get("url") or deal.get("product_url") or ""
+    row = {
         "m": deal["m"],
         "c": CLUB_CODE,
         "d": deal["d"],
@@ -271,6 +273,9 @@ def _vector_row(deal: dict, vec: list, cache_key: str, et: str) -> dict:
         "embed_id": cache_key,
         "_et": et,
     }
+    if u:
+        row["url"] = u
+    return row
 
 
 def load_embedding_cache(json_path: str) -> dict[str, dict]:

@@ -3,6 +3,7 @@ import json
 import time
 import sys
 import subprocess
+import hashlib
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 import firebase_admin
@@ -17,6 +18,11 @@ from dotenv import load_dotenv
 # ==========================================
 
 _REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+BEHATSDAA_ORIGIN = "https://www.behatsdaa.org.il"
+DATA_JSON_PATH = os.path.join(_REPO_ROOT, "cardsdeven", "public", "data.json")
+# Gemini: max 100 texts per embed_content call; incremental cache to save daily quota.
+_EMBED_BATCH = min(100, max(1, int(os.environ.get("BEHATSDAA_EMBED_BATCH_SIZE", "100"))))
+_EMBED_SLEEP = max(0.0, float(os.environ.get("BEHATSDAA_EMBED_SLEEP_SEC", "2")))
 
 # Load .env from repo root and from cardsdeven/ (GEMINI_API_KEY, BEHATSDAA_ID, etc.)
 load_dotenv(os.path.join(_REPO_ROOT, '.env'))
@@ -115,15 +121,23 @@ def get_new_otp(start_time, timeout_seconds=120):
 def push_to_github():
     print("--- Git Automation Started ---")
     try:
-        subprocess.run(["git", "add", "cardsdeven/public/data.json"], check=True)
+        to_add = [
+            rel
+            for rel in ("cardsdeven/public/data.json", "cardsdeven/public/behatsdaa_deals.json")
+            if os.path.isfile(os.path.join(_REPO_ROOT, rel))
+        ]
+        if not to_add:
+            print("No scrape output files to commit.")
+            return
+        subprocess.run(["git", "add", "--"] + to_add, check=True, cwd=_REPO_ROOT)
         commit_msg = f"auto-scrape: {time.strftime('%Y-%m-%d %H:%M:%S')}"
-        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+        subprocess.run(["git", "commit", "-m", commit_msg], check=True, cwd=_REPO_ROOT)
         
         print("Pulling latest changes from GitHub...")
-        subprocess.run(["git", "pull", "--rebase"], check=True)
+        subprocess.run(["git", "pull", "--rebase"], check=True, cwd=_REPO_ROOT)
         
         print("Pushing to GitHub...")
-        subprocess.run(["git", "push"], check=True)
+        subprocess.run(["git", "push"], check=True, cwd=_REPO_ROOT)
         print("Successfully pushed to GitHub!")
     except subprocess.CalledProcessError as e:
         print(f"Git Update Skipped: No changes to push or network issue. ({e})")
@@ -177,61 +191,181 @@ def categorize_and_route(breadcrumb_topic, image_text, title, address):
 # 3. AI EMBEDDING GENERATOR
 # ==========================================
 
-def generate_embeddings(nested_data):
-    """Turns all scraped deals into mathematical vectors for instant AI searching."""
-    print("\n--- Generating AI Search Vectors ---")
-    flat_deals = []
-    
-    # Flatten the data for embedding
+def flatten_behatsdaa_deals_for_app(nested_data):
+    """Compact list for the web app (avoid shipping full data.json with vectors)."""
+    flat = []
+    seq = 0
     for category, venues in nested_data.items():
         for venue, shows in venues.items():
             for show_name, deals in shows.items():
                 for deal in deals:
-                    search_string = f"[{category}] {venue} - {show_name}: {deal['title']} ({deal['price']}) at {deal['address']}"
-                    flat_deals.append({
+                    title = deal.get("title") or ""
+                    price = deal.get("price") or ""
+                    url = (deal.get("url") or "").strip()
+                    d = " ".join(f"{title} ({price})".split()).strip()
+                    row = {
+                        "m": venue,
+                        "c": "BEHATSDAA",
+                        "d": d or title or price or "Deal",
+                        "_bhKey": f"bh-{seq}",
+                    }
+                    seq += 1
+                    if url:
+                        row["url"] = url
+                    flat.append(row)
+    return flat
+
+
+def _flatten_behatsdaa(nested_data):
+    flat = []
+    for category, venues in nested_data.items():
+        for venue, shows in venues.items():
+            for show_name, deals in shows.items():
+                for deal in deals:
+                    search_string = (
+                        f"[{category}] {venue} - {show_name}: {deal['title']} ({deal['price']}) at {deal['address']}"
+                    )
+                    url = (deal.get("url") or "").strip()
+                    flat.append({
                         "m": venue,
                         "c": "BEHATSDAA",
                         "d": f"{deal['title']} ({deal['price']})",
-                        "search_text": search_string
+                        "search_text": search_string,
+                        "url": url,
                     })
-    
-    print(f"Total deals to embed: {len(flat_deals)}")
-    
-    # Batch request embeddings from Google (100 at a time to be safe)
-    batch_size = 100
-    vectorized_deals = []
-    
-    for i in range(0, len(flat_deals), batch_size):
-        batch = flat_deals[i:i+batch_size]
-        texts = [item['search_text'] for item in batch]
-        
-        print(f"Embedding batch {i} to {i+len(batch)}...")
+    return flat
+
+
+def _behatsdaa_embed_cache_key(fd):
+    url = fd.get("url") or ""
+    if url:
+        return f"u:{hashlib.sha256(url.encode('utf-8')).hexdigest()}"
+    return f"h:{hashlib.sha256(fd['search_text'].encode('utf-8')).hexdigest()}"
+
+
+def _behatsdaa_embed_md_key(fd):
+    return f"md:{hashlib.sha256((fd['m'] + '||' + fd['d']).encode('utf-8')).hexdigest()}"
+
+
+def _behatsdaa_vector_row(fd, vec, cache_key, et):
+    return {
+        "m": fd["m"],
+        "c": fd["c"],
+        "d": fd["d"],
+        "v": vec,
+        "embed_id": cache_key,
+        "_et": et,
+        "url": fd.get("url") or "",
+    }
+
+
+def _load_behatsdaa_embedding_cache(json_path):
+    cache = {}
+    if not os.path.isfile(json_path):
+        return cache
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return cache
+    nested = data.get("data") or {}
+    vecs = data.get("vectors") or []
+    flat_prev = _flatten_behatsdaa(nested)
+    n = min(len(flat_prev), len(vecs))
+    for i in range(n):
+        fd = flat_prev[i]
+        vrec = vecs[i]
+        if "v" not in vrec:
+            continue
+        et = vrec.get("_et") or fd["search_text"]
+        k = vrec.get("embed_id") or _behatsdaa_embed_cache_key(fd)
+        entry = {"v": vrec["v"], "et": et}
+        cache[k] = entry
+        cache[_behatsdaa_embed_md_key(fd)] = entry
+    for vrec in vecs:
+        if "v" not in vrec:
+            continue
+        mk = f"md:{hashlib.sha256((vrec['m'] + '||' + vrec['d']).encode('utf-8')).hexdigest()}"
+        if mk not in cache:
+            et_guess = vrec.get("_et") or f"{vrec['m']} {vrec['d']}"
+            cache[mk] = {"v": vrec["v"], "et": et_guess}
+    return cache
+
+
+def _embed_batch_with_retry_behatsdaa(texts):
+    delays = [2, 5, 10, 20, 35, 55, 90, 120]
+    last_err = None
+    for attempt, wait in enumerate(delays):
         try:
-            response = client.models.embed_content(
+            return client.models.embed_content(
                 model="gemini-embedding-001",
                 contents=texts,
-                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
+                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
             )
-
-            for j, embedding in enumerate(response.embeddings):
-                deal = batch[j]
-                vectorized_deals.append({
-                    "m": deal["m"],
-                    "c": deal["c"],
-                    "d": deal["d"],
-                    "v": embedding.values # The mathematical vector
-                })
-
-                # --- THE FIX: Wait 60 seconds to respect Google's free tier limits ---
-            print("Batch complete. Resting for 60 seconds for API quota reset...")
-            time.sleep(60)
-
-            
         except Exception as e:
-            print(f"Failed to embed batch: {e}")
-            
+            last_err = e
+            msg = str(e).lower()
+            if "429" in msg or "resource_exhausted" in msg or "quota" in msg:
+                print(f"  Rate limited (attempt {attempt + 1}/{len(delays)}); sleeping {wait}s …")
+                time.sleep(wait)
+                continue
+            raise
+    raise last_err or RuntimeError("Embedding failed after retries")
+
+
+def generate_embeddings(nested_data):
+    """Vectors for RAG; reuses embeddings from existing data.json when deal text/url unchanged."""
+    print("\n--- Generating AI Search Vectors (incremental) ---")
+    flat_deals = _flatten_behatsdaa(nested_data)
+    print(f"Total deals (flattened): {len(flat_deals)}")
+
+    cache = _load_behatsdaa_embedding_cache(DATA_JSON_PATH)
+    filled = [None] * len(flat_deals)
+    pending_indices = []
+    reused = 0
+
+    for i, fd in enumerate(flat_deals):
+        et = fd["search_text"]
+        k = _behatsdaa_embed_cache_key(fd)
+        hit = None
+        use_key = k
+        if k in cache and cache[k]["et"] == et:
+            hit = cache[k]
+        else:
+            mk = _behatsdaa_embed_md_key(fd)
+            if mk in cache and cache[mk]["et"] == et:
+                hit = cache[mk]
+                use_key = k
+        if hit:
+            filled[i] = _behatsdaa_vector_row(fd, hit["v"], use_key, et)
+            reused += 1
+        else:
+            pending_indices.append(i)
+
+    need_api = len(flat_deals) - reused
+    print(f"Embeddings: {reused} reused from cache, {need_api} require API")
+
+    for b_start in range(0, len(pending_indices), _EMBED_BATCH):
+        batch_idx = pending_indices[b_start : b_start + _EMBED_BATCH]
+        batch_fds = [flat_deals[i] for i in batch_idx]
+        texts = [fd["search_text"] for fd in batch_fds]
+        print(f"  API batch: {len(texts)} texts …")
+        response = _embed_batch_with_retry_behatsdaa(texts)
+        for j, embedding in enumerate(response.embeddings):
+            gi = batch_idx[j]
+            fd = flat_deals[gi]
+            et = fd["search_text"]
+            k = _behatsdaa_embed_cache_key(fd)
+            filled[gi] = _behatsdaa_vector_row(fd, embedding.values, k, et)
+        if _EMBED_SLEEP and b_start + _EMBED_BATCH < len(pending_indices):
+            time.sleep(_EMBED_SLEEP)
+
+    missing = [i for i, row in enumerate(filled) if row is None]
+    if missing:
+        raise RuntimeError(f"Missing embeddings at indices {missing[:15]}")
+
     print("Vector generation complete!")
-    return vectorized_deals
+    return filled
 
 # ==========================================
 # 4. PAGE SCRAPING LOGIC
@@ -264,6 +398,23 @@ def scrape_page_data(page, url, master_data):
                 title = card.locator(".categories-container-item-header .medium-font").inner_text(timeout=1000).strip()
                 price = card.locator(".categories-container-item-price .price-text").inner_text(timeout=1000).strip()
                 address = card.locator(".categories-container-item-location .location-name-text").inner_text(timeout=1000).strip()
+
+                href = ""
+                try:
+                    href = card.evaluate(
+                        """(el) => { const a = el.closest('a'); return a && a.getAttribute('href') ? a.getAttribute('href').trim() : ''; }"""
+                    )
+                except Exception:
+                    try:
+                        al = card.locator("a[href]")
+                        if al.count() > 0:
+                            href = (al.first.get_attribute("href") or "").strip()
+                    except Exception:
+                        pass
+                if href.startswith("/"):
+                    href = BEHATSDAA_ORIGIN.rstrip("/") + href
+                elif href and not href.startswith("http"):
+                    href = BEHATSDAA_ORIGIN.rstrip("/") + "/" + href.lstrip("/")
                 
                 img_locator = card.locator(".categories-container-item-img").first
                 image_text = img_locator.get_attribute("title", timeout=1000)
@@ -283,7 +434,8 @@ def scrape_page_data(page, url, master_data):
                 sale_item = {
                     "title": title,
                     "price": price,
-                    "address": address
+                    "address": address,
+                    "url": href,
                 }
                 
                 if sale_item not in master_data[master_category][venue][show_name]:
@@ -344,7 +496,13 @@ def run_scraper(headless_mode=True):
             os.makedirs("cardsdeven/public", exist_ok=True)
             with open("cardsdeven/public/data.json", "w", encoding="utf-8") as f:
                 json.dump(final_json, f, ensure_ascii=False, indent=4)
-            print("\nScraping complete. Data saved to cardsdeven/public/data.json.")
+            deals_light = {
+                "last_updated": final_json["last_updated"],
+                "deals": flatten_behatsdaa_deals_for_app(all_scraped_data),
+            }
+            with open("cardsdeven/public/behatsdaa_deals.json", "w", encoding="utf-8") as f:
+                json.dump(deals_light, f, ensure_ascii=False, indent=2)
+            print("\nScraping complete. Data saved to cardsdeven/public/data.json and behatsdaa_deals.json.")
 
         except Exception as e:
             print(f"A critical error occurred: {e}")

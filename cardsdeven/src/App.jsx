@@ -92,8 +92,8 @@ const CLUBS = {
   DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', color: 'bg-slate-900' }
 };
 
-/** בהצדעה + DreamCard only; פיס פלוס deals load from /pais_plus_data.json at runtime. */
-const STATIC_DISCOUNTS_DATA = [
+/** Fallback בהצדעה rows when /data.json is missing or empty; scraped deals replace these when present. */
+const STATIC_BEHATSDAA_FALLBACK = [
   { m: "Domino's Pizza (דומינוס פיצה)", c: "BEHATSDAA", d: "משפחתית באיסוף מ-39 ₪, שובר 100 ב-65 ₪, ארוחות מ-65 ₪" },
   { m: "Pizza Hut (פיצה האט)", c: "BEHATSDAA", d: "אישית מ-20 ₪, משפחתית מ-54 ₪, 2 משפחתיות מ-89 ₪" },
   { m: "Papa John's (פאפא ג'ונס)", c: "BEHATSDAA", d: "מגשי פיצה החל מ-38 ₪" },
@@ -108,6 +108,9 @@ const STATIC_DISCOUNTS_DATA = [
   { m: "Mega Sport (מגה ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
   { m: "Aluf Sport (אלוף ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
   { m: "Holmes Place (הולמס פלייס)", c: "BEHATSDAA", d: "כרטיסיית 10 כניסות מ-432 ₪ / מנוי חצי שנתי מ-1,012 ₪" },
+];
+
+const STATIC_DREAMCARD = [
   { m: "American Eagle (אמריקן איגל)", c: "DREAMCARD", d: "פריט שני ב-50% הנחה" },
   { m: "FOX Home (פוקס הום)", c: "DREAMCARD", d: "25% הנחה על כל החנות" },
   { m: "Laline (ללין)", c: "DREAMCARD", d: "מבצע 3+3 מתנה" },
@@ -125,6 +128,51 @@ const STATIC_DISCOUNTS_DATA = [
   { m: "Foot Locker (פוט לוקר)", c: "DREAMCARD", d: "צבירת קאשבק VIP" },
   { m: "Sunglass Hut (סאנגלס האט)", c: "DREAMCARD", d: "10% הנחה נוספת על מבצעי החנות" }
 ];
+
+/** Nested shape from scraper `data` field: category → venue → show → [{ title, price, address, url? }]. */
+function flattenBehatsdaaDealsFromNested(nested) {
+  if (!nested || typeof nested !== 'object') return [];
+  const out = [];
+  let seq = 0;
+  for (const category of Object.keys(nested)) {
+    const venues = nested[category];
+    if (!venues || typeof venues !== 'object') continue;
+    for (const venue of Object.keys(venues)) {
+      const shows = venues[venue];
+      if (!shows || typeof shows !== 'object') continue;
+      for (const showName of Object.keys(shows)) {
+        const deals = shows[showName];
+        if (!Array.isArray(deals)) continue;
+        for (const deal of deals) {
+          const title = deal?.title != null ? String(deal.title) : '';
+          const price = deal?.price != null ? String(deal.price) : '';
+          const url = typeof deal?.url === 'string' ? deal.url.trim() : '';
+          const d = `${title} (${price})`.replace(/\s+/g, ' ').trim();
+          out.push({
+            m: venue,
+            c: 'BEHATSDAA',
+            d: d || title || price || 'Deal',
+            ...(url ? { url } : {}),
+            _bhKey: `bh-${seq++}`,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function DealLink({ url, className, children }) {
+  const u = typeof url === 'string' ? url.trim() : '';
+  if (u && /^https?:\/\//i.test(u)) {
+    return (
+      <a href={u} target="_blank" rel="noopener noreferrer" className={className}>
+        {children}
+      </a>
+    );
+  }
+  return <span className={className}>{children}</span>;
+}
 
 /** Pais+ and other deals often use titles that are not exact KNOWN_MERCHANTS keys. */
 function dealMatchesInsightMerchant(deal, searchMatch, rawQuery) {
@@ -516,6 +564,7 @@ export default function App() {
   const [insightSearch, setInsightSearch] = useState('');
   const [clubSearch, setClubSearch] = useState('');
   const [paisPlusDiscounts, setPaisPlusDiscounts] = useState([]);
+  const [behatsdaaScrapedDiscounts, setBehatsdaaScrapedDiscounts] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -532,6 +581,7 @@ export default function App() {
             genre: row.genre,
             product_id: row.product_id,
             product_url: row.product_url,
+            url: row.url || row.product_url,
           }))
         );
       })
@@ -542,10 +592,28 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  const discountsData = useMemo(
-    () => [...STATIC_DISCOUNTS_DATA, ...paisPlusDiscounts],
-    [paisPlusDiscounts]
-  );
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${import.meta.env.BASE_URL}behatsdaa_deals.json`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((payload) => {
+        if (cancelled) return;
+        const fromDeals = Array.isArray(payload?.deals) ? payload.deals : [];
+        const nested = payload?.data;
+        const flat = fromDeals.length > 0 ? fromDeals : flattenBehatsdaaDealsFromNested(nested);
+        setBehatsdaaScrapedDiscounts(flat);
+      })
+      .catch((err) => {
+        console.warn('CardsDeVen: could not load behatsdaa_deals.json (בהצדעה)', err);
+        if (!cancelled) setBehatsdaaScrapedDiscounts([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const discountsData = useMemo(() => {
+    const behatsdaa = behatsdaaScrapedDiscounts.length > 0 ? behatsdaaScrapedDiscounts : STATIC_BEHATSDAA_FALLBACK;
+    return [...behatsdaa, ...STATIC_DREAMCARD, ...paisPlusDiscounts];
+  }, [behatsdaaScrapedDiscounts, paisPlusDiscounts]);
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -1189,9 +1257,9 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                                 <div className="text-[10px] font-bold uppercase tracking-wider text-amber-200 mb-3 flex items-center gap-1.5"><Gift size={14} /> Club Deals Available</div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   {merchantDeals.map((deal, idx) => (
-                                    <div key={idx} className="bg-black/20 border border-white/10 rounded-xl p-3 text-sm flex gap-3 items-start backdrop-blur-sm">
+                                    <div key={deal._bhKey || deal.product_id || idx} className="bg-black/20 border border-white/10 rounded-xl p-3 text-sm flex gap-3 items-start backdrop-blur-sm">
                                       <span className={`px-2 py-1 rounded text-[10px] font-bold text-white whitespace-nowrap ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span>
-                                      <span className="text-amber-50 font-medium text-sm leading-tight">{deal.d}</span>
+                                      <DealLink url={deal.url || deal.product_url} className="text-amber-50 font-medium text-sm leading-tight hover:underline">{deal.d}</DealLink>
                                     </div>
                                   ))}
                                 </div>
@@ -1235,9 +1303,12 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                         const genreMatch = d.genre && String(d.genre).toLowerCase().includes(qs);
                         return d.m.toLowerCase().includes(qs) || d.d.toLowerCase().includes(qs) || cat.toLowerCase().includes(qs) || genreMatch || catAliases.some((a) => a.includes(qs));
                       }).map((deal, idx) => (
-                        <div key={deal.product_id ? `pais-${deal.product_id}` : `${deal.c}-${idx}-${deal.m.slice(0, 40)}`} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                        <div key={deal.product_id ? `pais-${deal.product_id}` : deal._bhKey || `${deal.c}-${idx}-${deal.m.slice(0, 40)}`} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
                           <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat || 'Other'} className="w-12 h-12 rounded-lg" />
-                          <div><div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">{deal.m.split('(')[0].trim()}<span className={`text-[9px] px-1.5 py-0.5 rounded text-white ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span></div><div className="text-sm font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{deal.d}</div></div>
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">{deal.m.split('(')[0].trim()}<span className={`text-[9px] px-1.5 py-0.5 rounded text-white ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span></div>
+                            <DealLink url={deal.url || deal.product_url} className="text-sm font-medium text-emerald-600 dark:text-emerald-400 leading-tight hover:underline inline-block">{deal.d}</DealLink>
+                          </div>
                         </div>
                       ))}
                     </div>
