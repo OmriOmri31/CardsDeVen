@@ -7,19 +7,33 @@ Discovers .swiper.mySwiper1, .mySwiper2, ... collects category links from slides
 
 Output: cardsdeven/public/pais_plus_data.json
   - deals: [{ "m", "c": "PAIS_PLUS", "d", ... }] compatible with App.jsx DISCOUNTS_DATA
+  - vectors: Gemini embeddings (same shape as scraper.py), unless --no-embed
+
+Embeddings are incremental: vectors are reused from the previous pais_plus_data.json when
+deal content is unchanged (product_id or text signature), so routine scrapes only call the
+API for new/changed deals — not ~800+ requests every run.
+
+Optional env:
+  PAIS_EMBED_BATCH_SIZE=100   (max 100 — Gemini API hard limit per embed_content call)
+  PAIS_EMBED_SLEEP_SEC=2      (pause between batches; default 2)
+
+By default: embeds with Gemini (needs GEMINI_API_KEY) and runs git add/commit/push for
+pais_plus_data.json (same idea as scraper.py → data.json).
 
 Manual run:
   python scraper_pais_plus.py
   python scraper_pais_plus.py --visible
-  python scraper_pais_plus.py --embed   # optional Gemini vectors (needs GEMINI_API_KEY)
+  python scraper_pais_plus.py --no-embed   # skip vectors (faster; no GEMINI_API_KEY)
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -27,10 +41,13 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 try:
     from dotenv import load_dotenv
 
-    load_dotenv("cardsdeven/.env")
+    load_dotenv(os.path.join(_REPO_ROOT, ".env"))
+    load_dotenv(os.path.join(_REPO_ROOT, "cardsdeven", ".env"))
 except ImportError:
     pass
 
@@ -38,6 +55,10 @@ PAIS_LANDING = "https://www.pais.co.il/info/paisplus.aspx"
 PAIS_PLUS_ORIGIN = "https://paisplus.co.il"
 OUTPUT_PATH = os.path.join("cardsdeven", "public", "pais_plus_data.json")
 CLUB_CODE = "PAIS_PLUS"
+
+# Gemini embed_content allows at most 100 texts per request (BatchEmbedContentsRequest).
+_EMBED_BATCH = min(100, max(1, int(os.environ.get("PAIS_EMBED_BATCH_SIZE", "100"))))
+_EMBED_SLEEP = max(0.0, float(os.environ.get("PAIS_EMBED_SLEEP_SEC", "2")))
 
 # Safety cap so a site change does not loop forever
 MAX_SWIPERS = 30
@@ -223,8 +244,94 @@ def dedupe_deals(deals: list[dict]) -> list[dict]:
     return out
 
 
-def run_embed_deals(flat_deals: list[dict]) -> list[dict]:
-    """Optional: same vector shape as scraper.py for retrieval."""
+def embed_text(deal: dict) -> str:
+    genre = deal.get("genre") or ""
+    return f"[פיס פלוס / {genre}] {deal['m']}: {deal['d']}"
+
+
+def embed_cache_key(deal: dict) -> str:
+    if deal.get("product_id"):
+        return f"pid:{deal['product_id']}"
+    genre = deal.get("genre") or ""
+    h = hashlib.sha256(f"{deal['m']}\x1e{deal['d']}\x1e{genre}".encode("utf-8")).hexdigest()
+    return f"sig:{h}"
+
+
+def embed_md_fallback_key(deal: dict) -> str:
+    """Legacy rows without genre in cache text — match on title + body only."""
+    return f"md:{hashlib.sha256((deal['m'] + '||' + deal['d']).encode('utf-8')).hexdigest()}"
+
+
+def _vector_row(deal: dict, vec: list, cache_key: str, et: str) -> dict:
+    return {
+        "m": deal["m"],
+        "c": CLUB_CODE,
+        "d": deal["d"],
+        "v": vec,
+        "embed_id": cache_key,
+        "_et": et,
+    }
+
+
+def load_embedding_cache(json_path: str) -> dict[str, dict]:
+    """Map cache_key -> {v, et} from previous scrape file."""
+    cache: dict[str, dict] = {}
+    if not os.path.isfile(json_path):
+        return cache
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return cache
+
+    deals_prev = data.get("deals") or []
+    vecs_prev = data.get("vectors") or []
+    n = min(len(deals_prev), len(vecs_prev))
+    for i in range(n):
+        drec = deals_prev[i]
+        vrec = vecs_prev[i]
+        if "v" not in vrec:
+            continue
+        et = embed_text(drec)
+        k = embed_cache_key(drec)
+        entry = {"v": vrec["v"], "et": vrec.get("_et") or et}
+        cache[k] = entry
+        cache[embed_md_fallback_key(drec)] = entry
+
+    for vrec in vecs_prev:
+        if "v" not in vrec:
+            continue
+        mk = f"md:{hashlib.sha256((vrec['m'] + '||' + vrec['d']).encode('utf-8')).hexdigest()}"
+        if mk not in cache:
+            cache[mk] = {"v": vrec["v"], "et": vrec.get("_et") or embed_text({"m": vrec["m"], "d": vrec["d"], "genre": "", "c": CLUB_CODE})}
+
+    return cache
+
+
+def _embed_batch_with_retry(client, types_mod, texts: list[str]) -> list:
+    """Call embed_content with backoff on 429 / RESOURCE_EXHAUSTED."""
+    delays = [2, 5, 10, 20, 35, 55, 90, 120]
+    last_err: Exception | None = None
+    for attempt, wait in enumerate(delays):
+        try:
+            return client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=texts,
+                config=types_mod.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+            )
+        except Exception as e:
+            last_err = e
+            msg = str(e).lower()
+            if "429" in msg or "resource_exhausted" in msg or "quota" in msg:
+                print(f"  Rate limited (attempt {attempt + 1}/{len(delays)}); sleeping {wait}s …")
+                time.sleep(wait)
+                continue
+            raise
+    raise last_err or RuntimeError("Embedding failed after retries")
+
+
+def run_embed_deals_incremental(all_deals: list[dict]) -> list[dict]:
+    """Embed only new/changed deals; reuse vectors from existing OUTPUT_PATH."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY not set; cannot embed.")
@@ -232,37 +339,74 @@ def run_embed_deals(flat_deals: list[dict]) -> list[dict]:
     from google import genai
     from google.genai import types
 
+    cache = load_embedding_cache(OUTPUT_PATH)
     client = genai.Client(api_key=api_key)
-    vectorized: list[dict] = []
-    batch_size = 100
 
-    for i in range(0, len(flat_deals), batch_size):
-        batch = flat_deals[i : i + batch_size]
-        texts = []
-        for item in batch:
-            genre = item.get("genre", "")
-            texts.append(f"[פיס פלוס / {genre}] {item['m']}: {item['d']}")
+    n = len(all_deals)
+    filled: list[dict | None] = [None] * n
+    pending_indices: list[int] = []
+    reused = 0
 
-        print(f"Embedding batch {i}–{i + len(batch)} …")
-        response = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=texts,
-            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
-        )
+    for i, deal in enumerate(all_deals):
+        et = embed_text(deal)
+        k = embed_cache_key(deal)
+        hit = None
+        use_key = k
+        if k in cache and cache[k]["et"] == et:
+            hit = cache[k]
+        else:
+            mk = embed_md_fallback_key(deal)
+            if mk in cache and cache[mk]["et"] == et:
+                hit = cache[mk]
+                use_key = k
+        if hit:
+            filled[i] = _vector_row(deal, hit["v"], use_key, et)
+            reused += 1
+        else:
+            pending_indices.append(i)
+
+    need_api = n - reused
+    print(f"\n--- Embeddings: {reused} reused from cache, {need_api} require API ---")
+
+    for b_start in range(0, len(pending_indices), _EMBED_BATCH):
+        batch_idx = pending_indices[b_start : b_start + _EMBED_BATCH]
+        batch_deals = [all_deals[i] for i in batch_idx]
+        texts = [embed_text(d) for d in batch_deals]
+        print(f"  API batch: {len(batch_deals)} texts (indices {b_start}–{b_start + len(batch_idx)} of pending) …")
+        response = _embed_batch_with_retry(client, types, texts)
         for j, embedding in enumerate(response.embeddings):
-            deal = batch[j]
-            vectorized.append(
-                {
-                    "m": deal["m"],
-                    "c": CLUB_CODE,
-                    "d": deal["d"],
-                    "v": embedding.values,
-                }
-            )
-        print("Batch complete. Sleeping 60s for quota …")
-        time.sleep(60)
+            gi = batch_idx[j]
+            deal = all_deals[gi]
+            et = texts[j]
+            k = embed_cache_key(deal)
+            filled[gi] = _vector_row(deal, embedding.values, k, et)
+        if _EMBED_SLEEP and b_start + _EMBED_BATCH < len(pending_indices):
+            time.sleep(_EMBED_SLEEP)
 
-    return vectorized
+    missing = [i for i, row in enumerate(filled) if row is None]
+    if missing:
+        raise RuntimeError(f"Internal error: missing embeddings at indices {missing[:10]}…")
+
+    return [filled[i] for i in range(n)]  # type: ignore[list-item]
+
+
+def push_to_github() -> None:
+    """Commit and push pais_plus_data.json (mirrors scraper.py behavior for data.json)."""
+    print("--- Git Automation (pais_plus_data.json) ---")
+    try:
+        subprocess.run(["git", "add", "cardsdeven/public/pais_plus_data.json"], check=True)
+        commit_msg = f"auto-scrape pais+: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+        print("Pulling latest changes from GitHub...")
+        subprocess.run(["git", "pull", "--rebase"], check=True)
+        print("Pushing to GitHub...")
+        subprocess.run(["git", "push"], check=True)
+        print("Successfully pushed to GitHub!")
+    except subprocess.CalledProcessError as e:
+        print(f"Git update skipped: no changes, conflict, or network issue. ({e})")
+    except FileNotFoundError:
+        print("Git is not installed or not in PATH. Skipping push.")
+    print("------------------------------")
 
 
 def main() -> int:
@@ -275,46 +419,65 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Scrape Pais Plus deals from pais.co.il landing carousels.")
     parser.add_argument("--visible", action="store_true", help="Show browser window")
-    parser.add_argument("--embed", action="store_true", help="Generate Gemini embeddings (slow; needs API key)")
+    parser.add_argument(
+        "--no-embed",
+        action="store_true",
+        help="Skip Gemini embeddings (faster; omit vectors from JSON; no GEMINI_API_KEY needed)",
+    )
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        help="Do not git commit/push pais_plus_data.json after writing",
+    )
     args = parser.parse_args()
 
     all_deals: list[dict] = []
+    exit_code = 0
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not args.visible)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            viewport={"width": 1400, "height": 900},
-        )
-        page = context.new_page()
-        Stealth().apply_stealth_sync(page)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=not args.visible)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                viewport={"width": 1400, "height": 900},
+            )
+            page = context.new_page()
+            Stealth().apply_stealth_sync(page)
 
-        try:
-            categories = discover_category_links(page)
-            for cat_url, genre in categories:
-                all_deals.extend(scrape_category_page(page, cat_url, genre))
-        finally:
-            browser.close()
+            try:
+                categories = discover_category_links(page)
+                for cat_url, genre in categories:
+                    all_deals.extend(scrape_category_page(page, cat_url, genre))
+            finally:
+                browser.close()
 
-    all_deals = dedupe_deals(all_deals)
-    print(f"\nTotal unique deals: {len(all_deals)}")
+        all_deals = dedupe_deals(all_deals)
+        print(f"\nTotal unique deals: {len(all_deals)}")
 
-    payload: dict = {
-        "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "source": "pais_plus",
-        "deals": all_deals,
-    }
+        payload: dict = {
+            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "pais_plus",
+            "deals": all_deals,
+        }
 
-    if args.embed and all_deals:
-        slim = [{"m": d["m"], "c": d["c"], "d": d["d"], "genre": d.get("genre", "")} for d in all_deals]
-        payload["vectors"] = run_embed_deals(slim)
+        if not args.no_embed and all_deals:
+            payload["vectors"] = run_embed_deals_incremental(all_deals)
+        elif args.no_embed:
+            print("\n--- Skipping embeddings (--no-embed) ---")
 
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+        with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    print(f"Wrote {OUTPUT_PATH}")
-    return 0
+        print(f"Wrote {OUTPUT_PATH}")
+    except Exception as e:
+        print(f"A critical error occurred: {e}")
+        exit_code = 1
+    finally:
+        if not args.no_push:
+            push_to_github()
+
+    return exit_code
 
 
 if __name__ == "__main__":

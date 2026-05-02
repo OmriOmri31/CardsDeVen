@@ -92,7 +92,8 @@ const CLUBS = {
   DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', color: 'bg-slate-900' }
 };
 
-const DISCOUNTS_DATA = [
+/** בהצדעה + DreamCard only; פיס פלוס deals load from /pais_plus_data.json at runtime. */
+const STATIC_DISCOUNTS_DATA = [
   { m: "Domino's Pizza (דומינוס פיצה)", c: "BEHATSDAA", d: "משפחתית באיסוף מ-39 ₪, שובר 100 ב-65 ₪, ארוחות מ-65 ₪" },
   { m: "Pizza Hut (פיצה האט)", c: "BEHATSDAA", d: "אישית מ-20 ₪, משפחתית מ-54 ₪, 2 משפחתיות מ-89 ₪" },
   { m: "Papa John's (פאפא ג'ונס)", c: "BEHATSDAA", d: "מגשי פיצה החל מ-38 ₪" },
@@ -107,25 +108,6 @@ const DISCOUNTS_DATA = [
   { m: "Mega Sport (מגה ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
   { m: "Aluf Sport (אלוף ספורט)", c: "BEHATSDAA", d: "שובר קנייה 150 ₪ ב-100 ₪" },
   { m: "Holmes Place (הולמס פלייס)", c: "BEHATSDAA", d: "כרטיסיית 10 כניסות מ-432 ₪ / מנוי חצי שנתי מ-1,012 ₪" },
-  { m: "Domino's Pizza (דומינוס פיצה)", c: "PAIS_PLUS", d: "תו קנייה 150 ב-99 ש\"ח / 100 ב-69 ש\"ח" },
-  { m: "Pizza Hut (פיצה האט)", c: "PAIS_PLUS", d: "2 פיצות + תוספת + מקלות שוקולד ב-120 ש\"ח" },
-  { m: "Pizza Shemesh (פיצה שמש)", c: "PAIS_PLUS", d: "2 משפחתיות + תוספות + שתיה ב-75 ש\"ח" },
-  { m: "Papa John's (פאפא ג'ונס)", c: "PAIS_PLUS", d: "תו 100 ב-75 ש\"ח / פיצה אישית ב-22 ש\"ח" },
-  { m: "Pizza Prego (פיצה פרגו)", c: "PAIS_PLUS", d: "2 משפחתיות ב-80 ש\"ח" },
-  { m: "Cinema City (סינמה סיטי)", c: "PAIS_PLUS", d: "כרטיס ב-22 ש\"ח / כרטיס+פופקורן+שתיה ב-35 ש\"ח" },
-  { m: "Planet (פלאנט)", c: "PAIS_PLUS", d: "כרטיס ב-22 ש\"ח" },
-  { m: "Mishloha (משלוחה)", c: "PAIS_PLUS", d: "תו 100 ב-72 ש\"ח / 200 ב-160 ש\"ח" },
-  { m: "10bis (תן ביס)", c: "PAIS_PLUS", d: "תו קנייה 100 ב-67 ש\"ח" },
-  { m: "FOX (פוקס)", c: "PAIS_PLUS", d: "תו קנייה 200 ב-155 ש\"ח (אתר בלבד)" },
-  { m: "Terminal X (טרמינל איקס)", c: "PAIS_PLUS", d: "תווי קנייה החל מ-160 ש\"ח" },
-  { m: "Factory 54 (פקטורי 54)", c: "PAIS_PLUS", d: "תו 200 ב-120 ש\"ח" },
-  { m: "Golf & Co (גולף)", c: "PAIS_PLUS", d: "תו 250 ב-210 ש\"ח" },
-  { m: "Last Price (לאסט פרייס)", c: "PAIS_PLUS", d: "תו 300 ב-265 ש\"ח" },
-  { m: "Boxil (בוקסיל)", c: "PAIS_PLUS", d: "תו קנייה 400 ב-305 ש\"ח" },
-  { m: "Shrolik (שרוליק)", c: "PAIS_PLUS", d: "תו קנייה 400 ב-284 ש\"ח" },
-  { m: "Mega Sport (מגה ספורט)", c: "PAIS_PLUS", d: "תו 500 ב-390 ש\"ח / 300 ב-233 ש\"ח" },
-  { m: "Adidas (אדידס)", c: "PAIS_PLUS", d: "תו 200 ב-154 ש\"ח" },
-  { m: "Holmes Place (הולמס פלייס)", c: "PAIS_PLUS", d: "10 כניסות מ-529 ש\"ח" },
   { m: "American Eagle (אמריקן איגל)", c: "DREAMCARD", d: "פריט שני ב-50% הנחה" },
   { m: "FOX Home (פוקס הום)", c: "DREAMCARD", d: "25% הנחה על כל החנות" },
   { m: "Laline (ללין)", c: "DREAMCARD", d: "מבצע 3+3 מתנה" },
@@ -143,6 +125,19 @@ const DISCOUNTS_DATA = [
   { m: "Foot Locker (פוט לוקר)", c: "DREAMCARD", d: "צבירת קאשבק VIP" },
   { m: "Sunglass Hut (סאנגלס האט)", c: "DREAMCARD", d: "10% הנחה נוספת על מבצעי החנות" }
 ];
+
+/** Pais+ and other deals often use titles that are not exact KNOWN_MERCHANTS keys. */
+function dealMatchesInsightMerchant(deal, searchMatch, rawQuery) {
+  if (deal.m === searchMatch) return true;
+  const blob = `${deal.m} ${deal.d}`.toLowerCase();
+  const n = searchMatch.toLowerCase();
+  if (n.length >= 2 && blob.includes(n)) return true;
+  const short = searchMatch.split('(')[0].trim().toLowerCase();
+  if (short.length >= 2 && blob.includes(short)) return true;
+  const q = (rawQuery || '').trim().toLowerCase();
+  if (q.length >= 2 && blob.includes(q)) return true;
+  return false;
+}
 
 const KNOWN_MERCHANTS = {
   "Zara (זארה)": { cat: "Fashion & Apparel", networks: ['TH', 'TP'], aliases: ["zara", "זארה"], logo: "zara.png" },
@@ -520,6 +515,37 @@ export default function App() {
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
   const [clubSearch, setClubSearch] = useState('');
+  const [paisPlusDiscounts, setPaisPlusDiscounts] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${import.meta.env.BASE_URL}pais_plus_data.json`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.deals) ? data.deals : [];
+        setPaisPlusDiscounts(
+          rows.map((row) => ({
+            m: row.m,
+            c: row.c || 'PAIS_PLUS',
+            d: row.d,
+            genre: row.genre,
+            product_id: row.product_id,
+            product_url: row.product_url,
+          }))
+        );
+      })
+      .catch((err) => {
+        console.warn('CardsDeVen: could not load pais_plus_data.json', err);
+        if (!cancelled) setPaisPlusDiscounts([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const discountsData = useMemo(
+    () => [...STATIC_DISCOUNTS_DATA, ...paisPlusDiscounts],
+    [paisPlusDiscounts]
+  );
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -669,7 +695,7 @@ export default function App() {
     setAiInput('');
     setIsAiTyping(true);
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
-    const activeDiscounts = DISCOUNTS_DATA.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
+    const activeDiscounts = discountsData.filter((d) => userClubs.includes(d.c)).slice(0, 20).map((d) => `${d.m}-${d.d}`).join(' | ');
     const walletString = cardBalances.map((c) => {
       let line = `${c.name}:₪${c.remaining} (limit ₪${parseFloat(c.balance).toLocaleString()})`;
       if (c.ruleType === 'monthly') line += ' [MONTHLY: balance resets on the 1st; spending counts per calendar month]';
@@ -1142,7 +1168,9 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                       if (matches.length === 0) return <div className="text-white/80 font-medium bg-white/10 p-4 rounded-2xl border border-white/20">Merchant not found in official database. Generic category rules will apply.</div>;
                       return matches.map(([searchMatch, mData]) => {
                         const acceptedCards = sortedCardBalances.filter((c) => checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
-                        const merchantDeals = DISCOUNTS_DATA.filter((d) => d.m === searchMatch && userClubs.includes(d.c));
+                        const merchantDeals = discountsData.filter(
+                          (d) => userClubs.includes(d.c) && dealMatchesInsightMerchant(d, searchMatch, insightSearch)
+                        );
                         return (
                           <div key={searchMatch} className="animate-in slide-in-from-bottom-2 fade-in bg-white/10 p-5 rounded-2xl border border-white/20 shadow-md">
                             <div className="flex items-center gap-3 mb-4"><MerchantIcon merchantName={searchMatch} category={mData.cat} className="w-10 h-10 rounded-full" /><div><div className="text-base sm:text-lg font-bold text-white leading-tight">{searchMatch}</div><div className="text-[10px] sm:text-xs uppercase tracking-widest text-blue-200 mt-0.5">{CATEGORY_ICONS[mData.cat]} {mData.cat}</div></div></div>
@@ -1198,16 +1226,17 @@ Your response must ALWAYS follow this exact structure (use bold text for emphasi
                     <div className="text-center p-8"><Gift size={48} className="mx-auto mb-4 text-slate-200 dark:text-slate-800" /><p className="text-slate-500 font-medium">Select a club above to see your available deals.</p></div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {DISCOUNTS_DATA.filter((d) => {
+                      {discountsData.filter((d) => {
                         if (!userClubs.includes(d.c)) return false;
                         if (!clubSearch) return true;
                         const qs = clubSearch.toLowerCase();
                         const cat = KNOWN_MERCHANTS[d.m]?.cat || "";
                         const catAliases = CATEGORY_ALIASES[cat] || [];
-                        return d.m.toLowerCase().includes(qs) || d.d.toLowerCase().includes(qs) || cat.toLowerCase().includes(qs) || catAliases.some((a) => a.includes(qs));
+                        const genreMatch = d.genre && String(d.genre).toLowerCase().includes(qs);
+                        return d.m.toLowerCase().includes(qs) || d.d.toLowerCase().includes(qs) || cat.toLowerCase().includes(qs) || genreMatch || catAliases.some((a) => a.includes(qs));
                       }).map((deal, idx) => (
-                        <div key={idx} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                          <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat} className="w-12 h-12 rounded-lg" />
+                        <div key={deal.product_id ? `pais-${deal.product_id}` : `${deal.c}-${idx}-${deal.m.slice(0, 40)}`} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                          <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat || 'Other'} className="w-12 h-12 rounded-lg" />
                           <div><div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">{deal.m.split('(')[0].trim()}<span className={`text-[9px] px-1.5 py-0.5 rounded text-white ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span></div><div className="text-sm font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{deal.d}</div></div>
                         </div>
                       ))}
