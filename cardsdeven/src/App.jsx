@@ -12,6 +12,28 @@ import {
   Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info
 } from 'lucide-react';
 
+/** Firebase web SDK config from env (Vite) or injected __firebase_config (hosted runtimes). */
+function resolveFirebaseConfig() {
+  if (typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
+  }
+  const cfg = {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  };
+  const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    throw new Error(
+      `Missing Firebase web config: ${missing.join(', ')}. Copy cardsdeven/.env.example to cardsdeven/.env and set VITE_FIREBASE_* (Firebase console → Project settings → Your apps).`
+    );
+  }
+  return cfg;
+}
+
 const GRADIENTS = [
   'bg-gradient-to-br from-slate-700 to-slate-900',
 ];
@@ -509,28 +531,33 @@ export default function App() {
   };
 
   useEffect(() => {
-    const firebaseConfig = typeof __firebase_config !== 'undefined'
-      ? JSON.parse(__firebase_config)
-      : {
-        apiKey: "REMOVED_VITE_FIREBASE_API_KEY",
-        authDomain: "cardsdeven.firebaseapp.com",
-        projectId: "cardsdeven",
-        storageBucket: "cardsdeven.firebasestorage.app",
-        messagingSenderId: "226004826296",
-        appId: "1:226004826296:web:b1b173216ea6578ed29c4d"
-      };
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setLoadingAuth(false); });
-    return () => unsubscribe();
+    let unsubscribe = () => {};
+    try {
+      const firebaseConfig = resolveFirebaseConfig();
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setLoadingAuth(false); });
+    } catch (e) {
+      console.error(e);
+      setAuthError(e?.message || 'Firebase configuration error');
+      setLoadingAuth(false);
+    }
+    return () => { unsubscribe(); };
   }, []);
 
   useEffect(() => {
     if (!user) { setCards([]); setExpenses([]); setUserClubs([]); return; }
-    const db = getFirestore();
-    const unsubCards = onSnapshot(collection(db, getCollectionPath(user.uid, 'cards')), (snapshot) => setCards(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    const unsubExpenses = onSnapshot(collection(db, getCollectionPath(user.uid, 'expenses')), (snapshot) => setExpenses(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    const unsubClubs = onSnapshot(doc(db, getCollectionPath(user.uid, 'settings'), 'clubsProfile'), (docSnap) => { if (docSnap.exists()) setUserClubs(docSnap.data().activeClubs || []); });
+    let unsubCards = () => {};
+    let unsubExpenses = () => {};
+    let unsubClubs = () => {};
+    try {
+      const db = getFirestore();
+      unsubCards = onSnapshot(collection(db, getCollectionPath(user.uid, 'cards')), (snapshot) => setCards(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
+      unsubExpenses = onSnapshot(collection(db, getCollectionPath(user.uid, 'expenses')), (snapshot) => setExpenses(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
+      unsubClubs = onSnapshot(doc(db, getCollectionPath(user.uid, 'settings'), 'clubsProfile'), (docSnap) => { if (docSnap.exists()) setUserClubs(docSnap.data().activeClubs || []); });
+    } catch (e) {
+      console.error('Firestore', e);
+    }
     return () => { unsubCards(); unsubExpenses(); unsubClubs(); };
   }, [user]);
 

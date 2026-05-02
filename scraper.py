@@ -17,12 +17,36 @@ from dotenv import load_dotenv
 # ==========================================
 
 _REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
-FIREBASE_KEY_PATH = r"C:\Users\iamam\OneDrive\Desktop\cardsdeven-firebase-adminsdk-fbsvc-dac77be72f.json"
-DATABASE_URL = 'REMOVED_FIREBASE_DATABASE_URL'
 
 # Load .env from repo root and from cardsdeven/ (GEMINI_API_KEY, BEHATSDAA_ID, etc.)
 load_dotenv(os.path.join(_REPO_ROOT, '.env'))
 load_dotenv(os.path.join(_REPO_ROOT, 'cardsdeven', '.env'))
+
+
+def _init_firebase_admin() -> None:
+    if firebase_admin._apps:
+        return
+    database_url = os.environ.get('FIREBASE_DATABASE_URL', '').strip()
+    if not database_url:
+        raise ValueError(
+            'FIREBASE_DATABASE_URL is not set. Use your Realtime Database URL '
+            '(e.g. https://<project>-default-rtdb.firebaseio.com/).'
+        )
+    json_str = os.environ.get('FIREBASE_SERVICE_ACCOUNT', '').strip()
+    path = (
+        os.environ.get('FIREBASE_SERVICE_ACCOUNT_PATH', '').strip()
+        or os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '').strip()
+    )
+    if json_str:
+        cred = credentials.Certificate(json.loads(json_str))
+    elif path:
+        cred = credentials.Certificate(os.path.expanduser(path))
+    else:
+        raise ValueError(
+            'Firebase Admin credentials missing. Set FIREBASE_SERVICE_ACCOUNT (JSON string, e.g. in CI) '
+            'or FIREBASE_SERVICE_ACCOUNT_PATH / GOOGLE_APPLICATION_CREDENTIALS (path to service account file).'
+        )
+    firebase_admin.initialize_app(cred, {'databaseURL': database_url})
 
 BEHATSDAA_ID = os.environ.get('BEHATSDAA_ID', '').strip()
 if not BEHATSDAA_ID:
@@ -36,13 +60,9 @@ if not api_key:
     raise ValueError("GEMINI_API_KEY not found! Set it in .env or cardsdeven/.env.")
 client = genai.Client(api_key=api_key)
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_KEY_PATH)
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': DATABASE_URL
-    })
-
-otp_ref = db.reference('secret_otp_drop_zone_xyz123')
+_init_firebase_admin()
+_otp_path = os.environ.get('FIREBASE_OTP_REF', 'secret_otp_drop_zone_xyz123').strip() or 'secret_otp_drop_zone_xyz123'
+otp_ref = db.reference(_otp_path)
 
 TARGET_URLS = [
     "https://www.behatsdaa.org.il/", 
