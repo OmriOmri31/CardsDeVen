@@ -10,7 +10,7 @@
   display: flex;
   flex-direction: column;
   width: 268px;
-  min-height: 204px;
+  min-height: 218px;
   border-radius: 1rem;
   font-size: 18px;
   color: #fff;
@@ -106,6 +106,43 @@
   overflow: hidden;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.wallet-credit-card .wcc-expiry {
+  flex-shrink: 0;
+  margin-top: 0.4em;
+  padding: 0.35em 0.4em 0.4em;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  align-items: center;
+}
+
+.wallet-credit-card .wcc-expiry-label {
+  font-size: 0.45em;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.wallet-credit-card .wcc-expiry-date {
+  font-size: 0.72em;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.wallet-credit-card .wcc-expiry--soon .wcc-expiry-date {
+  color: #fdba74;
+  text-shadow: 0 0 12px rgba(251, 146, 60, 0.35);
+}
+
+.wallet-credit-card .wcc-expiry--soon .wcc-expiry-label {
+  color: #fed7aa;
+  opacity: 0.95;
 }
 
 .wallet-credit-card .wcc-amounts {

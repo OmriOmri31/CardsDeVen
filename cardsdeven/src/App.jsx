@@ -988,7 +988,15 @@ function renderAdvisorMessage(text, lang) {
   );
 }
 
-function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient }) {
+function formatPlasticExpiry(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient, ruleType, expiryDate, isExpiringSoon }) {
+  const showExpiry = ruleType === 'expires' && expiryDate;
   return (
     <div className="wallet-credit-card-wrap wallet-credit-card-wrap--lg-scale">
       <div className="wallet-credit-card" style={{ '--wcc-bg': chromeGradient }}>
@@ -1003,6 +1011,12 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chro
           </div>
         </div>
         <div className="wcc-program" title={programName}>{programName}</div>
+        {showExpiry ? (
+          <div className={`wcc-expiry${isExpiringSoon ? ' wcc-expiry--soon' : ''}`}>
+            <span className="wcc-expiry-label">Expires</span>
+            <span className="wcc-expiry-date">{formatPlasticExpiry(expiryDate)}</span>
+          </div>
+        ) : null}
         <div className="wcc-amounts">
           <div className="wcc-original">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
           <div className="wcc-current-block">
@@ -1785,6 +1799,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             balanceLimit={parseFloat(card.balance)}
                             programName={progData.name}
                             chromeGradient={chromeGradient}
+                            ruleType={card.ruleType}
+                            expiryDate={card.expiryDate}
+                            isExpiringSoon={isExpiringSoon}
                           />
                           <div className="flex-1 min-w-0 flex flex-col gap-4">
                             <div className="flex flex-col gap-3">
