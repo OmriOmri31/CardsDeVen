@@ -12,12 +12,22 @@ import {
   Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info
 } from 'lucide-react';
 
-/** Firebase web SDK config from env (Vite) or injected __firebase_config (hosted runtimes). */
+/** Default web app config (Firebase console → Project settings). Override with VITE_FIREBASE_* in .env for other envs. */
+const DEFAULT_FIREBASE_WEB_CONFIG = {
+  apiKey: 'AIzaSyBjn2oGHj-bT_O213csvNPLoEliTdWbS4M',
+  authDomain: 'cardsdeven.firebaseapp.com',
+  projectId: 'cardsdeven',
+  storageBucket: 'cardsdeven.firebasestorage.app',
+  messagingSenderId: '226004826296',
+  appId: '1:226004826296:web:b1b173216ea6578ed29c4d',
+};
+
+/** Firebase web SDK: __firebase_config (hosted) → VITE_* from .env → defaults above. */
 function resolveFirebaseConfig() {
   if (typeof __firebase_config !== 'undefined') {
     return JSON.parse(__firebase_config);
   }
-  const cfg = {
+  const fromEnv = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -25,13 +35,9 @@ function resolveFirebaseConfig() {
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
   };
-  const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);
-  if (missing.length) {
-    throw new Error(
-      `Missing Firebase web config: ${missing.join(', ')}. Copy cardsdeven/.env.example to cardsdeven/.env and set VITE_FIREBASE_* (Firebase console → Project settings → Your apps).`
-    );
-  }
-  return cfg;
+  const envComplete = Object.values(fromEnv).every((v) => v && String(v).trim() !== '');
+  if (envComplete) return fromEnv;
+  return DEFAULT_FIREBASE_WEB_CONFIG;
 }
 
 const GRADIENTS = [
