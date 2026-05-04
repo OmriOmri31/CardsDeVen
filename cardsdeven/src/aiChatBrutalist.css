@@ -351,7 +351,9 @@
   background: #0f172a;
   box-shadow: 6px 6px 0 #6366f1;
   padding: 1.25rem 1rem 1.5rem;
-  max-width: 24rem;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Brutalist shell — dark slate + indigo/violet (matches app header vibe) */
@@ -385,16 +387,16 @@
 
 /* Message bubbles */
 .ai-chat-brutalist .ai-brutalist-bubble {
-  max-width: 88%;
-  padding: 0.85rem 1rem;
+  max-width: 92%;
+  padding: 0.95rem 1.1rem;
   border: 3px solid #475569;
-  font-size: 1.0625rem;
-  line-height: 1.55;
+  font-size: 1.125rem;
+  line-height: 1.6;
 }
 
 @media (min-width: 640px) {
   .ai-chat-brutalist .ai-brutalist-bubble {
-    max-width: 76%;
+    max-width: 85%;
   }
 }
 
@@ -411,12 +413,12 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble .ai-brutalist-meta {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: 0.35rem;
-  opacity: 0.85;
+  margin-bottom: 0.4rem;
+  opacity: 0.92;
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble--user .ai-brutalist-meta {
