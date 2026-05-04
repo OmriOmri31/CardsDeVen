@@ -2100,7 +2100,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
             <div
-              className="ai-chat-brutalist mx-auto w-full max-w-[min(28rem,calc(100vw-1.25rem))] sm:max-w-[32rem] space-y-4 sm:space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col text-left h-[calc(100dvh-7rem)] min-h-[26rem] mb-1"
+              className="ai-chat-brutalist mx-auto w-full max-w-5xl flex flex-col text-left min-h-[28rem] h-[calc(100dvh-7.5rem)] space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
             >
               <div className="ai-brutalist-header-row">
                 <div>
@@ -2128,7 +2128,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   {aiMessages.map((msg, idx) => {
                     const replyLang = msg.role === 'model' ? precedingUserLang(aiMessages, idx) : 'he';
                     return (
-                      <div key={idx} className={`flex items-start gap-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div key={idx} className={`flex items-start ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {msg.role === 'model' && (
                           <div className="ai-brutalist-avatar">
                             <Bot size={16} className="text-violet-200" aria-hidden />
