@@ -1681,12 +1681,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     });
   };
 
-  if (loadingAuth) return <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}><div className="min-h-screen cdv-comic-bg flex items-center justify-center text-indigo-600 dark:text-indigo-400"><Loader2 className="animate-spin" size={40} /></div></div>;
+  if (loadingAuth) return <div className={`flex min-h-screen min-h-0 flex-1 flex-col ${isDarkMode ? 'dark' : ''}`}><div className="flex min-h-0 flex-1 cdv-comic-bg items-center justify-center text-indigo-600 dark:text-indigo-400"><Loader2 className="animate-spin" size={40} /></div></div>;
 
   if (!user) {
     return (
-      <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
-        <div className="min-h-screen cdv-comic-bg flex flex-col items-center justify-center p-4 transition-colors duration-300">
+      <div className={`flex min-h-screen min-h-0 flex-1 flex-col ${isDarkMode ? 'dark' : ''}`}>
+        <div className="flex min-h-0 flex-1 flex-col cdv-comic-bg items-center justify-center p-4 transition-colors duration-300">
           <div className="mb-10 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
             <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 p-5 rounded-3xl border-[3px] border-slate-900 dark:border-slate-600 shadow-[8px_8px_0_#312e81] mb-6 inline-block"><CreditCard size={48} className="text-white" /></div>
             <h1 className="cdv-comic-title text-4xl text-slate-900 dark:text-white mb-3 tracking-tight">CardsDeVen</h1>
@@ -1725,10 +1725,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   return (
     <div
-      className={`${isDarkMode ? 'dark' : ''} font-sans transition-colors duration-300 ${activeTab === 'ai' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen pb-28'}`}
+      className={`${isDarkMode ? 'dark' : ''} font-sans transition-colors duration-300 ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-28'}`}
     >
       <div
-        className={`cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative ${activeTab === 'ai' ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'min-h-screen'}`}
+        className={`cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-screen'}`}
       >
         {toast.visible && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300 max-w-[calc(100vw-2rem)]">
@@ -1748,7 +1748,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
         </div>
 
         <main
-          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden pb-28' : ''}`}
+          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 basis-0 flex-col overflow-hidden pb-32' : ''}`}
         >
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
@@ -2125,7 +2125,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
-            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 basis-0 flex-col text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="ai-brutalist-shell min-h-0">
                 <div className="ai-brutalist-tip-bar">
                   <button

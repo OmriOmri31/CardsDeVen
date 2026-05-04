@@ -364,7 +364,8 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  /* basis 0 so the column can shrink and the scroll region absorbs overflow (footer stays visible) */
+  flex: 1 1 0;
   min-height: 0;
 }
 
@@ -399,7 +400,7 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
