@@ -1725,7 +1725,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   return (
     <div
-      className={`${isDarkMode ? 'dark' : ''} font-sans transition-colors duration-300 ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-28'}`}
+      className={`${isDarkMode ? 'dark' : ''} font-sans transition-colors duration-300 ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-14'}`}
     >
       <div
         className={`cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-screen'}`}
@@ -1748,7 +1748,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
         </div>
 
         <main
-          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 basis-0 flex-col overflow-hidden pb-32' : ''}`}
+          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 basis-0 flex-col overflow-hidden pb-16' : ''}`}
         >
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
@@ -2205,11 +2205,11 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           )}
         </main>
 
-        <nav className="cdv-comic-nav fixed bottom-0 left-0 right-0 backdrop-blur-xl px-2 sm:px-6 py-4 flex justify-around sm:justify-center sm:gap-8 lg:gap-16 z-40 transition-colors overflow-x-auto">
+        <nav className="cdv-comic-nav fixed bottom-0 left-0 right-0 backdrop-blur-xl px-2 sm:px-4 py-2 flex justify-around sm:justify-center sm:gap-6 lg:gap-10 z-40 transition-colors overflow-x-auto">
           {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' }, { id: 'wallets', icon: CreditCard, label: 'Wallet' }, { id: 'planner', icon: Receipt, label: 'Planner' }, { id: 'insights', icon: Search, label: 'Search' }, { id: 'clubs', icon: Gift, label: 'Clubs' }, { id: 'ai', icon: Bot, label: 'Smart AI' }].map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-1.5 transition-all duration-300 min-w-[50px] ${activeTab === item.id ? 'text-indigo-600 dark:text-violet-400 scale-110' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 hover:scale-105'}`}>
-              <item.icon size={24} className={activeTab === item.id ? 'stroke-[2.5px]' : ''} />
-              <span className="text-[9px] sm:text-xs font-bold uppercase tracking-widest mt-1 opacity-80 whitespace-nowrap">{item.label}</span>
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-0.5 transition-all duration-300 min-w-[44px] ${activeTab === item.id ? 'text-indigo-600 dark:text-violet-400 scale-110' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 hover:scale-105'}`}>
+              <item.icon size={20} className={activeTab === item.id ? 'stroke-[2.5px]' : ''} />
+              <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest opacity-80 whitespace-nowrap leading-none">{item.label}</span>
             </button>
           ))}
         </nav>

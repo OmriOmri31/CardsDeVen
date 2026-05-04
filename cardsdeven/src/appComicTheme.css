@@ -24,14 +24,14 @@
 
 .cdv-comic-nav {
   background: #ffffff !important;
-  border-top: 4px solid #0f172a !important;
-  box-shadow: 0 -6px 0 0 #6366f1 !important;
+  border-top: 2px solid #0f172a !important;
+  box-shadow: 0 -3px 0 0 #6366f1 !important;
 }
 
 .dark .cdv-comic-nav {
   background: #0f172a !important;
   border-top-color: #475569 !important;
-  box-shadow: 0 -6px 0 0 #4f46e5 !important;
+  box-shadow: 0 -3px 0 0 #4f46e5 !important;
 }
 
 /* Thick offset panel — use with rounded-2xl + padding */
