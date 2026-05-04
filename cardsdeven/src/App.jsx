@@ -1037,6 +1037,7 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chro
 }
 
 const AI_CHAT_STORAGE_KEY = 'cardsdeven_ai_chat_v1';
+const AI_TIP_BAR_DISMISSED_KEY = 'cardsdeven_ai_tip_bar_dismissed_v1';
 const DEFAULT_AI_WELCOME_TEXT = 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎';
 
 /** Random epigraph while the model is typing (Office, HIMYM, Modern Family). */
@@ -1174,6 +1175,13 @@ export default function App() {
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [aiLoadingQuote, setAiLoadingQuote] = useState('');
+  const [aiTipBarOpen, setAiTipBarOpen] = useState(() => {
+    try {
+      return localStorage.getItem(AI_TIP_BAR_DISMISSED_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
   const chatEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const aiRequestInFlightRef = useRef(false);
@@ -1521,6 +1529,18 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       setIsAiTyping(false);
       aiRequestInFlightRef.current = false;
     }
+  };
+
+  const clearAiChatHistory = () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }];
+    setAiMessages(fresh);
+    try {
+      localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh));
+    } catch {
+      /* ignore */
+    }
+    setIsAiTyping(false);
   };
 
   const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '' }); setEditingCardId(null); setShowCardForm(false); };
@@ -2125,26 +2145,55 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
-            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 basis-0 flex-col text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 basis-0 flex-col text-left -translate-y-[10px] animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="ai-brutalist-shell min-h-0">
-                <div className="ai-brutalist-tip-bar">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (abortControllerRef.current) abortControllerRef.current.abort();
-                      const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }];
-                      setAiMessages(fresh);
-                      try { localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh)); } catch { /* ignore */ }
-                      setIsAiTyping(false);
-                    }}
-                    className="ai-brutalist-clear ai-brutalist-clear--in-tip"
-                    title="Clear Chat History"
-                  >
-                    <Trash2 size={18} className="text-violet-100" aria-hidden />
-                    <span className="sr-only">Clear chat history</span>
-                  </button>
-                  <p className="ai-brutalist-tip-text">TIP: Budget + item + area = sharper combos.</p>
-                </div>
+                {aiTipBarOpen ? (
+                  <div className="ai-brutalist-tip-bar">
+                    <button type="button" onClick={clearAiChatHistory} className="ai-brutalist-clear ai-brutalist-clear--in-tip" title="Clear Chat History">
+                      <Trash2 size={18} className="text-violet-100" aria-hidden />
+                      <span className="sr-only">Clear chat history</span>
+                    </button>
+                    <p className="ai-brutalist-tip-text">TIP: Budget + item + area = sharper combos.</p>
+                    <button
+                      type="button"
+                      className="ai-brutalist-tip-dismiss"
+                      title="Close tip"
+                      aria-label="Close tip"
+                      onClick={() => {
+                        setAiTipBarOpen(false);
+                        try {
+                          localStorage.setItem(AI_TIP_BAR_DISMISSED_KEY, '1');
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    >
+                      <X size={16} className="text-white/90" strokeWidth={2.5} aria-hidden />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="ai-brutalist-tip-bar ai-brutalist-tip-bar--minimal">
+                    <button type="button" onClick={clearAiChatHistory} className="ai-brutalist-clear ai-brutalist-clear--in-tip" title="Clear Chat History">
+                      <Trash2 size={18} className="text-violet-100" aria-hidden />
+                      <span className="sr-only">Clear chat history</span>
+                    </button>
+                    <div className="min-w-0 flex-1" aria-hidden />
+                    <button
+                      type="button"
+                      className="ai-brutalist-tip-restore"
+                      onClick={() => {
+                        setAiTipBarOpen(true);
+                        try {
+                          localStorage.removeItem(AI_TIP_BAR_DISMISSED_KEY);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    >
+                      Show tip
+                    </button>
+                  </div>
+                )}
                 <div className="ai-brutalist-scroll space-y-4">
                   {aiMessages.map((msg, idx) => {
                     const replyLang = msg.role === 'model' ? precedingUserLang(aiMessages, idx) : 'he';
