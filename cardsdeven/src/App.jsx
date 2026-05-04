@@ -2145,7 +2145,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
-            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 basis-0 flex-col text-left -translate-y-[10px] animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 basis-0 flex-col text-left max-sm:translate-y-[15px] sm:-translate-y-[10px] animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="ai-brutalist-shell min-h-0">
                 {aiTipBarOpen ? (
                   <div className="ai-brutalist-tip-bar">
@@ -2153,7 +2153,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       <Trash2 size={18} className="text-violet-100" aria-hidden />
                       <span className="sr-only">Clear chat history</span>
                     </button>
-                    <p className="ai-brutalist-tip-text">TIP: Budget + item + area = sharper combos.</p>
+                    <p className="ai-brutalist-tip-text max-sm:line-clamp-2 sm:line-clamp-none">TIP: Budget + item + area = sharper combos.</p>
                     <button
                       type="button"
                       className="ai-brutalist-tip-dismiss"

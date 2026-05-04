@@ -379,6 +379,29 @@
   flex-shrink: 0;
 }
 
+@media (max-width: 639px) {
+  .ai-chat-brutalist .ai-brutalist-tip-bar {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+    justify-content: space-between;
+  }
+
+  .ai-chat-brutalist .ai-brutalist-tip-bar .ai-brutalist-clear--in-tip {
+    order: 1;
+  }
+
+  .ai-chat-brutalist .ai-brutalist-tip-bar .ai-brutalist-tip-dismiss {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .ai-chat-brutalist .ai-brutalist-tip-bar .ai-brutalist-tip-text {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
 .ai-chat-brutalist .ai-brutalist-tip-text {
   flex: 1;
   min-width: 0;
