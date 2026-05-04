@@ -183,7 +183,7 @@ const STATIC_BEHATSDAA_FALLBACK = [
   { m: "Holmes Place (הולמס פלייס)", c: "BEHATSDAA", d: "כרטיסיית 10 כניסות מ-432 ₪ / מנוי חצי שנתי מ-1,012 ₪" },
 ];
 
-const STATIC_DREAMCARD = [
+const STATIC_DREAMCARD_FALLBACK = [
   { m: "American Eagle (אמריקן איגל)", c: "DREAMCARD", d: "פריט שני ב-50% הנחה" },
   { m: "FOX Home (פוקס הום)", c: "DREAMCARD", d: "25% הנחה על כל החנות" },
   { m: "Laline (ללין)", c: "DREAMCARD", d: "מבצע 3+3 מתנה" },
@@ -1183,6 +1183,7 @@ export default function App() {
   const [clubSearch, setClubSearch] = useState('');
   const [paisPlusDiscounts, setPaisPlusDiscounts] = useState([]);
   const [behatsdaaScrapedDiscounts, setBehatsdaaScrapedDiscounts] = useState([]);
+  const [dreamcardScrapedDiscounts, setDreamcardScrapedDiscounts] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1228,10 +1229,34 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${import.meta.env.BASE_URL}dreamcard_deals.json`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((payload) => {
+        if (cancelled) return;
+        const deals = Array.isArray(payload?.deals) ? payload.deals : [];
+        setDreamcardScrapedDiscounts(
+          deals.map((row) => ({
+            m: row.m,
+            c: row.c || 'DREAMCARD',
+            d: row.d,
+            ...(typeof row.url === 'string' && row.url.trim() ? { url: row.url.trim() } : {}),
+          }))
+        );
+      })
+      .catch((err) => {
+        console.warn('CardsDeVen: could not load dreamcard_deals.json (DreamCard)', err);
+        if (!cancelled) setDreamcardScrapedDiscounts([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const discountsData = useMemo(() => {
     const behatsdaa = behatsdaaScrapedDiscounts.length > 0 ? behatsdaaScrapedDiscounts : STATIC_BEHATSDAA_FALLBACK;
-    return [...behatsdaa, ...STATIC_DREAMCARD, ...paisPlusDiscounts];
-  }, [behatsdaaScrapedDiscounts, paisPlusDiscounts]);
+    const dreamcard = dreamcardScrapedDiscounts.length > 0 ? dreamcardScrapedDiscounts : STATIC_DREAMCARD_FALLBACK;
+    return [...behatsdaa, ...dreamcard, ...paisPlusDiscounts];
+  }, [behatsdaaScrapedDiscounts, dreamcardScrapedDiscounts, paisPlusDiscounts]);
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -1682,7 +1707,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} font-sans pb-28 transition-colors duration-300`}>
       <div className="min-h-screen cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative">
         {toast.visible && (
-          <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300 max-w-[calc(100vw-2rem)]">
             <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'} px-6 py-3 rounded-full shadow-2xl font-medium flex items-center gap-2`}>
               {toast.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-400 dark:text-emerald-500" /> : <AlertCircle size={18} className="text-white" />}
               {toast.message}
@@ -1690,20 +1715,15 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           </div>
         )}
 
-        <header className="cdv-comic-header backdrop-blur-md p-4 sm:p-5 sticky top-0 z-40 transition-colors">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 p-2 sm:p-2.5 rounded-xl border-2 border-slate-900 dark:border-slate-600 shadow-[4px_4px_0_#312e81]"><CreditCard size={24} className="text-white" /></div>
-              <div><h1 className="cdv-comic-title text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">CardsDeVen</h1><p className="text-[10px] sm:text-xs font-medium text-slate-600 dark:text-slate-400 font-mono">{user.email}</p></div>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-              <button onClick={handleSignOut} className="p-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"><LogOut size={18} /></button>
-            </div>
+        <div className="fixed top-3 right-3 z-50 flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2 rounded-2xl border-[3px] border-slate-900 dark:border-slate-600 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2 py-2 shadow-[4px_4px_0_#6366f1] dark:shadow-[4px_4px_0_#4f46e5]">
+            <button type="button" onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300" aria-label={isDarkMode ? 'Light mode' : 'Dark mode'}>{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+            <button type="button" onClick={handleSignOut} className="p-2.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors" aria-label="Sign out"><LogOut size={18} /></button>
           </div>
-        </header>
+          <p className="text-[10px] sm:text-xs font-medium text-slate-600 dark:text-slate-400 max-w-[12rem] truncate text-right px-1" title={user.email}>{user.email}</p>
+        </div>
 
-        <main className="max-w-6xl mx-auto p-4 sm:p-6 mt-2 sm:mt-6">
+        <main className="max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6">
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -1,7 +1,8 @@
 /* AI chat: brutalist UI + Uiverse hamster wheel (Nawsome), scoped under .ai-chat-brutalist */
 
+/* Match app typography (Merta Sans + Abraham from index.css / tailwind theme). */
 .ai-chat-brutalist {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: "Merta Sans", "Abraham", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* —— Hamster wheel (keyframes prefixed to avoid clashes) —— */
@@ -335,8 +336,8 @@
 
 /* Loader quote */
 .ai-chat-brutalist .ai-loader-quote {
-  font-family: "Archivo Black", "IBM Plex Mono", sans-serif;
-  font-size: 0.8125rem;
+  font-family: "Archivo Black", "Merta Sans", "Abraham", sans-serif;
+  font-size: 0.9375rem;
   line-height: 1.45;
   text-align: center;
   color: #e2e8f0;
@@ -366,7 +367,7 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-tip {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   padding: 0.65rem 1rem;
   background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%);
@@ -387,8 +388,8 @@
   max-width: 88%;
   padding: 0.85rem 1rem;
   border: 3px solid #475569;
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 1.0625rem;
+  line-height: 1.55;
 }
 
 @media (min-width: 640px) {
@@ -410,7 +411,7 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble .ai-brutalist-meta {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -464,15 +465,15 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-title {
-  font-family: "Archivo Black", sans-serif;
-  font-size: 1.75rem;
+  font-family: "Archivo Black", "Merta Sans", sans-serif;
+  font-size: 1.875rem;
   line-height: 1.1;
   color: #f8fafc;
   letter-spacing: -0.02em;
 }
 
 .ai-chat-brutalist .ai-brutalist-sub {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: #94a3b8;
   margin-top: 0.35rem;
@@ -503,7 +504,7 @@
 .ai-chat-brutalist .brutalist-container {
   position: relative;
   width: 100%;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: inherit;
 }
 
 .ai-chat-brutalist .brutalist-input-wrap {
@@ -521,7 +522,7 @@
   z-index: 1;
   width: 100%;
   padding: 15px 3.5rem 15px 15px;
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 700;
   color: #f1f5f9;
   background-color: #1e293b;
@@ -634,7 +635,7 @@
 }
 
 .ai-chat-brutalist .ai-advisor-prose__p {
-  font-size: 0.9rem;
+  font-size: 1.0625rem;
   line-height: 1.65;
   color: #cbd5e1;
   margin: 0 0 0.65rem;
@@ -671,8 +672,8 @@
 }
 
 .ai-chat-brutalist .ai-advisor-card__title {
-  font-family: "Archivo Black", sans-serif;
-  font-size: 1.05rem;
+  font-family: "Archivo Black", "Merta Sans", sans-serif;
+  font-size: 1.125rem;
   line-height: 1.35;
   color: #f8fafc;
   margin: 0 0 0.75rem;
@@ -687,7 +688,7 @@
 }
 
 .ai-chat-brutalist .ai-advisor-card__row {
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   line-height: 1.55;
   color: #94a3b8;
   margin: 0 0 0.45rem;
@@ -708,7 +709,7 @@
 
 .ai-chat-brutalist .ai-advisor-card__pay {
   white-space: pre-wrap;
-  font-size: 0.84rem;
+  font-size: 0.9375rem;
   line-height: 1.6;
   color: #e2e8f0;
   margin: 0 0 0.75rem;
