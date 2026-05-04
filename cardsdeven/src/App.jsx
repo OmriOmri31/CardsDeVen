@@ -854,7 +854,14 @@ function linkifyForAdvisor(segment, keyPrefix) {
     if (href.toLowerCase().startsWith('www.')) href = `https://${href}`;
     const label = hebrewAnchorLabelForUrl(href);
     out.push(
-      <a key={`${keyPrefix}-a-${partIdx++}`} href={href} title={href} target="_blank" rel="noopener noreferrer">
+      <a
+        key={`${keyPrefix}-a-${partIdx++}`}
+        href={href}
+        title={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="ai-advisor-inline-link"
+      >
         {label}
       </a>
     );
@@ -1723,7 +1730,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           <p className="text-[10px] sm:text-xs font-medium text-slate-600 dark:text-slate-400 max-w-[12rem] truncate text-right px-1" title={user.email}>{user.email}</p>
         </div>
 
-        <main className="max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6">
+        <main
+          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 h-[calc(100dvh-7rem)] max-h-[calc(100dvh-7rem)] flex-col overflow-hidden' : ''}`}
+        >
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -2100,13 +2109,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
             <div
-              className="ai-chat-brutalist mx-auto w-full max-w-5xl flex flex-col text-left min-h-[28rem] h-[calc(100dvh-7.5rem)] space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+              className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col space-y-3 text-left sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
             >
               <div className="ai-brutalist-header-row">
-                <div>
-                  <h2 className="ai-brutalist-title">SMART ASSISTANT</h2>
-                  <p className="ai-brutalist-sub">Ask what to buy — I’ll match clubs + wallet.</p>
-                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -2119,8 +2124,13 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   className="ai-brutalist-clear"
                   title="Clear Chat History"
                 >
-                  <Trash2 size={20} className="text-violet-100" />
+                  <Trash2 size={20} className="text-violet-100" aria-hidden />
+                  <span className="sr-only">Clear chat history</span>
                 </button>
+                <div className="min-w-0 flex-1">
+                  <h2 className="ai-brutalist-title">SMART ASSISTANT</h2>
+                  <p className="ai-brutalist-sub">Ask what to buy — I’ll match clubs + wallet.</p>
+                </div>
               </div>
               <div className="ai-brutalist-shell min-h-0">
                 <div className="ai-brutalist-tip">TIP: Budget + item + area = sharper combos.</div>

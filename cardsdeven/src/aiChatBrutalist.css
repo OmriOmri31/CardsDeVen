@@ -450,7 +450,7 @@
 }
 
 .ai-chat-brutalist .ai-brutalist-bubble--model a {
-  color: #a5b4fc !important;
+  color: #a5b4fc;
 }
 
 .ai-chat-brutalist .ai-brutalist-avatar {
@@ -470,11 +470,17 @@
 
 .ai-chat-brutalist .ai-brutalist-header-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: flex-end;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  flex-wrap: nowrap;
   flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  .ai-chat-brutalist .ai-brutalist-header-row {
+    flex-wrap: wrap;
+  }
 }
 
 .ai-chat-brutalist .ai-brutalist-title {
@@ -659,11 +665,18 @@
   margin-bottom: 0;
 }
 
-.ai-chat-brutalist .ai-advisor-prose__p a {
-  color: #c4b5fd;
-  font-weight: 700;
+.ai-chat-brutalist .ai-advisor-prose__p a,
+.ai-chat-brutalist .ai-advisor-inline-link {
+  color: #818cf8;
+  font-weight: 800;
   text-decoration: underline;
+  text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+}
+
+.ai-chat-brutalist .ai-advisor-prose__p a:hover,
+.ai-chat-brutalist .ai-advisor-inline-link:hover {
+  color: #c7d2fe;
 }
 
 .ai-chat-brutalist .ai-advisor-card {
@@ -733,10 +746,15 @@
 }
 
 .ai-chat-brutalist .ai-advisor-card__pay a {
-  color: #fef08a;
+  color: #1e1b4b;
   font-weight: 800;
   text-decoration: underline;
+  text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+}
+
+.dark .ai-chat-brutalist .ai-advisor-card__pay a {
+  color: #fef9c3;
 }
 
 .ai-chat-brutalist .ai-advisor-card__action {
@@ -744,19 +762,21 @@
   align-items: center;
   justify-content: center;
   margin-top: 0.25rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.875rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-decoration: none !important;
-  color: #0f172a !important;
-  background: linear-gradient(90deg, #a5b4fc 0%, #c4b5fd 100%);
+  color: #f8fafc !important;
+  background: linear-gradient(180deg, #4f46e5 0%, #4338ca 100%);
   border: 3px solid #312e81;
   box-shadow: 4px 4px 0 #1e1b4b;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .ai-chat-brutalist .ai-advisor-card__action:hover {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
   transform: translate(2px, 2px);
   box-shadow: 2px 2px 0 #1e1b4b;
 }
