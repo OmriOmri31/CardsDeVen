@@ -1271,6 +1271,19 @@ export default function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
+    if (activeTab !== 'ai') return undefined;
+    const { documentElement: html, body } = document;
+    const prevHtml = html.style.overflow;
+    const prevBody = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtml;
+      body.style.overflow = prevBody;
+    };
+  }, [activeTab]);
+
+  useEffect(() => {
     try {
       localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(aiMessages));
     } catch {
@@ -1711,8 +1724,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   }
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} font-sans pb-28 transition-colors duration-300`}>
-      <div className="min-h-screen cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative">
+    <div
+      className={`${isDarkMode ? 'dark' : ''} font-sans transition-colors duration-300 ${activeTab === 'ai' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen pb-28'}`}
+    >
+      <div
+        className={`cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative ${activeTab === 'ai' ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'min-h-screen'}`}
+      >
         {toast.visible && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300 max-w-[calc(100vw-2rem)]">
             <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'} px-6 py-3 rounded-full shadow-2xl font-medium flex items-center gap-2`}>
@@ -1731,7 +1748,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
         </div>
 
         <main
-          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 h-[calc(100dvh-7rem)] max-h-[calc(100dvh-7rem)] flex-col overflow-hidden' : ''}`}
+          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden pb-28' : ''}`}
         >
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
@@ -2108,32 +2125,26 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
-            <div
-              className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col space-y-3 text-left sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
-            >
-              <div className="ai-brutalist-header-row">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (abortControllerRef.current) abortControllerRef.current.abort();
-                    const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }];
-                    setAiMessages(fresh);
-                    try { localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh)); } catch { /* ignore */ }
-                    setIsAiTyping(false);
-                  }}
-                  className="ai-brutalist-clear"
-                  title="Clear Chat History"
-                >
-                  <Trash2 size={20} className="text-violet-100" aria-hidden />
-                  <span className="sr-only">Clear chat history</span>
-                </button>
-                <div className="min-w-0 flex-1">
-                  <h2 className="ai-brutalist-title">SMART ASSISTANT</h2>
-                  <p className="ai-brutalist-sub">Ask what to buy — I’ll match clubs + wallet.</p>
-                </div>
-              </div>
+            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="ai-brutalist-shell min-h-0">
-                <div className="ai-brutalist-tip">TIP: Budget + item + area = sharper combos.</div>
+                <div className="ai-brutalist-tip-bar">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (abortControllerRef.current) abortControllerRef.current.abort();
+                      const fresh = [{ role: 'model', text: 'היסטוריית הצ\'אט נמחקה! אז מה קונים היום? 😎' }];
+                      setAiMessages(fresh);
+                      try { localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(fresh)); } catch { /* ignore */ }
+                      setIsAiTyping(false);
+                    }}
+                    className="ai-brutalist-clear ai-brutalist-clear--in-tip"
+                    title="Clear Chat History"
+                  >
+                    <Trash2 size={18} className="text-violet-100" aria-hidden />
+                    <span className="sr-only">Clear chat history</span>
+                  </button>
+                  <p className="ai-brutalist-tip-text">TIP: Budget + item + area = sharper combos.</p>
+                </div>
                 <div className="ai-brutalist-scroll space-y-4">
                   {aiMessages.map((msg, idx) => {
                     const replyLang = msg.role === 'model' ? precedingUserLang(aiMessages, idx) : 'he';

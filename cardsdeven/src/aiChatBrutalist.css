@@ -368,14 +368,34 @@
   min-height: 0;
 }
 
-.ai-chat-brutalist .ai-brutalist-tip {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  padding: 0.65rem clamp(1rem, 2.5vw, 1.5rem);
+.ai-chat-brutalist .ai-brutalist-tip-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem clamp(0.75rem, 2vw, 1.25rem);
   background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%);
-  color: #f8fafc;
   border-bottom: 3px solid #312e81;
   flex-shrink: 0;
+}
+
+.ai-chat-brutalist .ai-brutalist-tip-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #f8fafc;
+}
+
+.ai-chat-brutalist .ai-brutalist-clear--in-tip {
+  padding: 0.35rem 0.45rem;
+  box-shadow: 3px 3px 0 #6366f1;
+  flex-shrink: 0;
+}
+
+.ai-chat-brutalist .ai-brutalist-clear--in-tip:hover {
+  box-shadow: 2px 2px 0 #6366f1;
 }
 
 .ai-chat-brutalist .ai-brutalist-scroll {
@@ -466,36 +486,6 @@
   margin-right: 0.75rem;
   box-shadow: 3px 3px 0 #6366f1;
   color: #c4b5fd;
-}
-
-.ai-chat-brutalist .ai-brutalist-header-row {
-  display: flex;
-  justify-content: flex-start;
-  align-items: flex-end;
-  gap: 0.75rem 1rem;
-  flex-wrap: nowrap;
-  flex-shrink: 0;
-}
-
-@media (max-width: 639px) {
-  .ai-chat-brutalist .ai-brutalist-header-row {
-    flex-wrap: wrap;
-  }
-}
-
-.ai-chat-brutalist .ai-brutalist-title {
-  font-family: "Archivo Black", "Merta Sans", sans-serif;
-  font-size: 1.875rem;
-  line-height: 1.1;
-  color: #f8fafc;
-  letter-spacing: -0.02em;
-}
-
-.ai-chat-brutalist .ai-brutalist-sub {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #94a3b8;
-  margin-top: 0.35rem;
 }
 
 .ai-chat-brutalist .ai-brutalist-clear {
