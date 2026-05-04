@@ -622,7 +622,7 @@
 
 /* Advisor model messages: card layout + readable prose (not “terminal markdown”) */
 .ai-chat-brutalist .ai-advisor-root {
-  max-width: 26rem;
+  max-width: 100%;
   width: 100%;
 }
 

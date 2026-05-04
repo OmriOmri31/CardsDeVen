@@ -2099,7 +2099,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
           {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
           {activeTab === 'ai' && (
-            <div className="ai-chat-brutalist space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[80vh] flex flex-col text-left">
+            <div
+              className="ai-chat-brutalist mx-auto w-full max-w-[19.5rem] sm:max-w-[22rem] space-y-4 sm:space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col text-left h-[calc(100dvh-7rem)] min-h-[26rem] mb-1"
+            >
               <div className="ai-brutalist-header-row">
                 <div>
                   <h2 className="ai-brutalist-title">SMART ASSISTANT</h2>
