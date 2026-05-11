@@ -2149,10 +2149,6 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               <div className="ai-brutalist-shell min-h-0">
                 {aiTipBarOpen ? (
                   <div className="ai-brutalist-tip-bar">
-                    <button type="button" onClick={clearAiChatHistory} className="ai-brutalist-clear ai-brutalist-clear--in-tip" title="Clear Chat History">
-                      <Trash2 size={18} className="text-violet-100" aria-hidden />
-                      <span className="sr-only">Clear chat history</span>
-                    </button>
                     <p className="ai-brutalist-tip-text max-sm:line-clamp-2 sm:line-clamp-none">TIP: Budget + item + area = sharper combos.</p>
                     <button
                       type="button"
@@ -2173,11 +2169,6 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   </div>
                 ) : (
                   <div className="ai-brutalist-tip-bar ai-brutalist-tip-bar--minimal">
-                    <button type="button" onClick={clearAiChatHistory} className="ai-brutalist-clear ai-brutalist-clear--in-tip" title="Clear Chat History">
-                      <Trash2 size={18} className="text-violet-100" aria-hidden />
-                      <span className="sr-only">Clear chat history</span>
-                    </button>
-                    <div className="min-w-0 flex-1" aria-hidden />
                     <button
                       type="button"
                       className="ai-brutalist-tip-restore"
@@ -2195,6 +2186,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   </div>
                 )}
                 <div className="ai-brutalist-scroll space-y-4">
+                  <div className="ai-brutalist-sticky-clear">
+                    <button type="button" onClick={clearAiChatHistory} className="ai-brutalist-clear ai-brutalist-clear--sticky" title="Clear Chat History">
+                      <Trash2 size={18} className="text-violet-100" aria-hidden />
+                      <span className="sr-only">Clear chat history</span>
+                    </button>
+                  </div>
                   {aiMessages.map((msg, idx) => {
                     const replyLang = msg.role === 'model' ? precedingUserLang(aiMessages, idx) : 'he';
                     return (
