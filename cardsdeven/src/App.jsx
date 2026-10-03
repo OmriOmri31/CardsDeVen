@@ -1248,15 +1248,30 @@ function recurringStatusLine(card, asOf = new Date()) {
 function walletLineForAdvisor(card) {
   const spec = getCycleSpec(card);
   const remaining = Number(card.remaining);
+  let line;
   if (!spec) {
-    return `${card.name}:₪${remaining} (limit ₪${parseFloat(card.balance).toLocaleString()})`;
+    line = `${card.name}:₪${remaining} (limit ₪${parseFloat(card.balance).toLocaleString()})`;
+  } else {
+    const snap = card.cycle || describeCycle(spec, new Date());
+    if (spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
+      line = `${card.name}:₪${remaining} available now [MONTHLY: ₪${spec.grant} refills on the 1st; unused balance resets; only spending in that calendar month counts]`;
+    } else {
+      const resetOn = formatDate(snap.nextReset);
+      line = `${card.name}:₪${remaining} available now [CYCLE: ₪${spec.grant} added every ${spec.refillEveryMonths} months; ${snap.grants} of ${snap.grantsPerCycle} grants loaded (₪${snap.loaded} before spending, ₪${snap.cycleCap} by the end of the cycle); unused balance stacks and resets to zero on ${resetOn}. A future plan date includes grants that will have arrived by then. Spending in the same reset window reduces that balance.]`;
+    }
   }
-  const snap = card.cycle || describeCycle(spec, new Date());
-  if (spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
-    return `${card.name}:₪${remaining} available now [MONTHLY: ₪${spec.grant} refills on the 1st; unused balance resets; only spending in that calendar month counts]`;
+  if (card.balanceOverride) {
+    const when = formatDate(card.balanceOverride.at);
+    line += ` [CURRENT BALANCE was set on ${when} to ₪${card.balanceOverride.amount}. Spending before that moment is already included. Later spending reduces this figure. A recurring card returns to its normal refill at the next reset.]`;
   }
-  const resetOn = formatDate(snap.nextReset);
-  return `${card.name}:₪${remaining} available now [CYCLE: ₪${spec.grant} added every ${spec.refillEveryMonths} months; ${snap.grants} of ${snap.grantsPerCycle} grants loaded (₪${snap.loaded} before spending, ₪${snap.cycleCap} by the end of the cycle); unused balance stacks and resets to zero on ${resetOn}. A future plan date includes grants that will have arrived by then. Spending in the same reset window reduces that balance.]`;
+  return line;
+}
+
+function balanceSetLine(card) {
+  if (!card.balanceOverride) return '';
+  const when = formatDate(card.balanceOverride.at);
+  const resumes = getCycleSpec(card) ? ' The normal refill takes over again at the next reset.' : '';
+  return `Balance set ${when}. Plans from before that moment are already included.${resumes}`;
 }
 
 const Modal = ({ isOpen, onClose, title, children }) => {
@@ -1353,6 +1368,8 @@ export default function App() {
   const quickSpendAnchorCardIdRef = useRef(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [cardPendingDelete, setCardPendingDelete] = useState(null);
+  const [balanceEditCardId, setBalanceEditCardId] = useState(null);
+  const [balanceEditValue, setBalanceEditValue] = useState('');
   const [editingCardId, setEditingCardId] = useState(null);
   const [newCard, setNewCard] = useState(EMPTY_CARD_FORM);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
@@ -1747,6 +1764,40 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'cards')), cardData);
     showToastMsg(editingCardId ? 'Card updated' : 'Card added to wallet');
     resetCardForm();
+  };
+
+  const startSetBalance = (card) => {
+    setBalanceEditCardId(card.id);
+    const current = Number(card.remaining);
+    setBalanceEditValue(Number.isFinite(current) ? String(current) : '');
+  };
+
+  const handleSetBalance = async (e) => {
+    e.preventDefault();
+    if (!user || !balanceEditCardId) return;
+    const amount = Number(balanceEditValue);
+    if (!Number.isFinite(amount) || amount < 0) {
+      showToastMsg('Enter the balance that is on the card right now.', 'error');
+      return;
+    }
+    await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), balanceEditCardId), {
+      balanceSetTo: Math.round(amount * 100) / 100,
+      balanceSetAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    showToastMsg('Balance updated');
+    setBalanceEditCardId(null);
+  };
+
+  const handleClearSetBalance = async () => {
+    if (!user || !balanceEditCardId) return;
+    await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), balanceEditCardId), {
+      balanceSetTo: deleteField(),
+      balanceSetAt: deleteField(),
+      updatedAt: new Date().toISOString(),
+    });
+    showToastMsg('Back to the tracked balance');
+    setBalanceEditCardId(null);
   };
 
   const handleSaveExpense = async (e) => {
@@ -2185,7 +2236,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                           <WalletCreditPlastic
                             balanceRemaining={card.remaining}
                             balanceLimit={pool}
-                            limitCaption={card.ruleType === 'cycle' ? 'This cycle' : 'Loaded'}
+                            limitCaption={card.balanceOverride ? 'Current' : (card.ruleType === 'cycle' ? 'This cycle' : 'Loaded')}
                             programName={progData.name}
                             chromeGradient={chromeGradient}
                             ruleType={card.ruleType}
@@ -2230,12 +2281,16 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                 <div className={`cdv-meter__fill ${isExpiringSoon ? 'cdv-meter__fill--warning' : ''}`} style={{ width: `${percentRemaining}%` }} />
                               </div>
                               {scheduleLine ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{scheduleLine}</p> : null}
+                              {balanceSetLine(card) ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{balanceSetLine(card)}</p> : null}
                             </div>
 
                             <div className="flex flex-wrap gap-2">
                               <button type="button" onClick={() => startQuickExpense(card.id)} className="cdv-btn cdv-btn--primary">
                                 <Zap size={16} className="shrink-0" aria-hidden />
                                 Quick spend
+                              </button>
+                              <button type="button" onClick={() => startSetBalance(card)} className="cdv-btn cdv-btn--outline">
+                                Set balance
                               </button>
                               {cardBalanceUrl ? (
                                 <a href={cardBalanceUrl} target="_blank" rel="noopener noreferrer" className="cdv-btn cdv-btn--outline">
@@ -2840,6 +2895,50 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               <Trash2 size={16} aria-hidden /> Delete card
             </button>
           </div>
+        </Modal>
+
+        <Modal
+          isOpen={!!balanceEditCardId}
+          onClose={() => setBalanceEditCardId(null)}
+          title={(() => {
+            const named = cardBalances.find((c) => c.id === balanceEditCardId);
+            return named ? `Set balance · ${named.name}` : 'Set balance';
+          })()}
+        >
+          {(() => {
+            const target = cardBalances.find((c) => c.id === balanceEditCardId);
+            const hasSnapshot = target && target.balanceSetTo != null && target.balanceSetTo !== '';
+            return (
+              <form onSubmit={handleSetBalance} className="space-y-6">
+                <p className="text-sm leading-relaxed text-[var(--cdv-mute)]">
+                  Type the amount on this card right now. Use it when spending was not logged, or when more money was added. Older plans stay in the ledger and are already included in this number. Anything you plan after saving is subtracted.
+                  {target && isRecurringRule(target.ruleType) ? ' A monthly or yearly card goes back to its normal refill at the next reset.' : ''}
+                </p>
+                <div>
+                  <label htmlFor="set-balance-amount" className="cdv-label">Current balance (₪)</label>
+                  <input
+                    id="set-balance-amount"
+                    type="number"
+                    required
+                    min="0"
+                    step="0.01"
+                    value={balanceEditValue}
+                    onChange={(e) => setBalanceEditValue(e.target.value)}
+                    className="cdv-input cdv-amount !text-base !font-semibold"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="flex flex-col-reverse gap-2 border-t border-[var(--cdv-hairline)] pt-6 sm:flex-row sm:justify-end">
+                  {hasSnapshot ? (
+                    <button type="button" onClick={handleClearSetBalance} className="cdv-btn cdv-btn--outline">
+                      Use tracked balance
+                    </button>
+                  ) : null}
+                  <button type="submit" className="cdv-btn cdv-btn--primary">Save balance</button>
+                </div>
+              </form>
+            );
+          })()}
         </Modal>
 
         <Modal isOpen={showCardForm} onClose={resetCardForm} title={editingCardId ? 'Edit Card' : 'Add Program Card'}>

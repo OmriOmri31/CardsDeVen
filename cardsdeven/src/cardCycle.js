@@ -205,28 +205,55 @@ export function expenseInSameResetWindow(card, expense, asOfInput) {
   return Math.floor(a / reset) === Math.floor(b / reset);
 }
 
+/**
+ * A manual "this is the balance right now" snapshot.
+ * Permanent cards keep it until it is cleared. Recurring cards keep it only
+ * inside the reset window that was open when it was saved; the next refill
+ * window goes back to the normal grant.
+ */
+export function balanceOverride(card, asOfInput) {
+  if (!card || card.balanceSetTo == null || card.balanceSetTo === '') return null;
+  if (!card.balanceSetAt) return null;
+  const at = asOfDate(card.balanceSetAt);
+  if (Number.isNaN(at.getTime())) return null;
+  const asOf = asOfDate(asOfInput);
+  if (asOf.getTime() < at.getTime()) return null;
+  const spec = getCycleSpec(card);
+  if (spec && !expenseInSameResetWindow(card, { scheduledFor: at }, asOf)) return null;
+  return { amount: shekels(card.balanceSetTo), at };
+}
+
+export function expenseCountsTowardBalance(card, expense, asOfInput) {
+  if (!expense || expense.cardId !== card.id) return false;
+  const spec = getCycleSpec(card);
+  if (spec && !expenseInSameResetWindow(card, expense, asOfInput)) return false;
+  const override = balanceOverride(card, asOfInput);
+  if (override && expenseAsOfDate(expense).getTime() <= override.at.getTime()) return false;
+  return true;
+}
+
 export function computeCardFunds(card, expenses, asOfInput) {
   const asOf = asOfDate(asOfInput);
   const list = Array.isArray(expenses) ? expenses : [];
   const spec = getCycleSpec(card);
+  const override = balanceOverride(card, asOf);
   const spent = shekels(list.reduce((sum, expense) => {
-    if (!expense || expense.cardId !== card.id) return sum;
-    if (spec && !expenseInSameResetWindow(card, expense, asOf)) return sum;
+    if (!expenseCountsTowardBalance(card, expense, asOf)) return sum;
     return sum + shekels(expense.amount);
   }, 0));
   if (!spec) {
-    const loaded = shekels(card.balance);
-    return { spent, loaded, remaining: shekels(loaded - spent), cycle: null };
+    const loaded = override ? override.amount : shekels(card.balance);
+    return { spent, loaded, remaining: shekels(loaded - spent), cycle: null, balanceOverride: override };
   }
   const cycle = describeCycle(spec, asOf);
-  return { spent, loaded: cycle.loaded, remaining: shekels(cycle.loaded - spent), cycle };
+  const loaded = override ? override.amount : cycle.loaded;
+  return { spent, loaded, remaining: shekels(loaded - spent), cycle, balanceOverride: override };
 }
 
 /** Remaining as of a plan date. The expense being edited is not counted against itself. */
 export function remainingForPlan(card, expenses, asOfInput, editingExpense) {
   const funds = computeCardFunds(card, expenses, asOfInput);
-  if (!editingExpense || editingExpense.cardId !== card.id) return funds.remaining;
-  if (!expenseInSameResetWindow(card, editingExpense, asOfInput)) return funds.remaining;
+  if (!editingExpense || !expenseCountsTowardBalance(card, editingExpense, asOfInput)) return funds.remaining;
   return shekels(funds.remaining + shekels(editingExpense.amount));
 }
 
