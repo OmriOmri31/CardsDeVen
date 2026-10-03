@@ -11,6 +11,19 @@ import {
   scoreDealForChatRetrieval,
 } from './standupComedians';
 import {
+  CYCLE_MONTHS,
+  RECURRING_PRESETS,
+  asOfDate,
+  computeCardFunds,
+  cycleBadgeLabel,
+  describeCycle,
+  getCycleSpec,
+  isRecurringRule,
+  recurringPresetId,
+  remainingForPlan,
+  specFromRecurringForm,
+} from './cardCycle';
+import {
   CreditCard, LayoutDashboard, Receipt, Plus, Trash2, AlertCircle,
   CalendarDays, RefreshCw, Infinity as InfinityIcon, CheckCircle2,
   Edit2, Moon, Sun, PieChart, LogOut, Lock, Mail,
@@ -657,18 +670,6 @@ const getDaysUntilExpiry = (dateString) => {
   return Math.ceil((new Date(dateString) - new Date()) / (1000 * 60 * 60 * 24));
 };
 
-const getCalendarMonthKey = (dateInput) => {
-  const d = dateInput ? new Date(dateInput) : new Date();
-  if (Number.isNaN(d.getTime())) return getCalendarMonthKey(new Date());
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
-
-const getExpenseMonthKey = (expense) => {
-  if (expense.scheduledFor) return getCalendarMonthKey(expense.scheduledFor);
-  if (expense.updatedAt) return getCalendarMonthKey(expense.updatedAt);
-  return getCalendarMonthKey(new Date());
-};
-
 /** Firestore may return Timestamp; date input needs YYYY-MM-DD */
 const toScheduledForInputValue = (v) => {
   if (!v) return '';
@@ -1078,7 +1079,7 @@ function normalizeCardLink(raw) {
   }
 }
 
-function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient, ruleType, expiryDate, isExpiringSoon }) {
+function WalletCreditPlastic({ balanceRemaining, balanceLimit, limitCaption = 'Loaded', programName, chromeGradient, ruleType, expiryDate, isExpiringSoon }) {
   const showExpiry = ruleType === 'expires' && expiryDate;
   return (
     <div className="wallet-credit-card-wrap wallet-credit-card-wrap--lg-scale">
@@ -1101,7 +1102,7 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chro
           </div>
         ) : null}
         <div className="wcc-amounts">
-          <div className="wcc-original">Loaded <span className="cdv-amount">{formatShekels(balanceLimit)}</span></div>
+          <div className="wcc-original">{limitCaption} <span className="cdv-amount">{formatShekels(balanceLimit)}</span></div>
           <div className="wcc-current-block">
             <span className="wcc-current-label">Remaining</span>
             <div className="wcc-current cdv-amount">{formatShekels(balanceRemaining)}</div>
@@ -1200,8 +1201,63 @@ function HamsterWheelLoader() {
 const RULE_TYPES = {
   PERMANENT: { id: 'permanent', label: 'Permanent', icon: InfinityIcon },
   MONTHLY: { id: 'monthly', label: 'Monthly Reset', icon: RefreshCw },
+  CYCLE: { id: 'cycle', label: 'Recurring grant', icon: RefreshCw },
   EXPIRES: { id: 'expires', label: 'Expires On', icon: CalendarDays }
 };
+
+const BALANCE_BEHAVIORS = [
+  { id: 'permanent', label: 'Permanent', icon: InfinityIcon },
+  { id: 'recurring', label: 'Recurring grant', icon: RefreshCw },
+  { id: 'expires', label: 'Expires On', icon: CalendarDays },
+];
+
+const EMPTY_CARD_FORM = {
+  name: '',
+  balance: '',
+  programId: 'CUSTOM',
+  ruleType: 'permanent',
+  recurringPreset: 'monthly',
+  refillEveryMonths: 3,
+  resetEveryMonths: 12,
+  cycleStartMonth: 1,
+  expiryDate: '',
+  categories: [],
+  plasticAccentHex: '',
+  cardLink: '',
+};
+
+function planDateFromInput(scheduledFor) {
+  return scheduledFor ? asOfDate(scheduledFor) : new Date();
+}
+
+function recurringStatusLine(card, asOf = new Date()) {
+  const spec = getCycleSpec(card);
+  if (!spec) return '';
+  const snap = describeCycle(spec, asOf);
+  const grant = formatShekels(spec.grant);
+  if (spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
+    return `${grant} each calendar month. Unused balance does not carry past the 1st.`;
+  }
+  const cadence = spec.refillEveryMonths === 12 ? 'year' : `${spec.refillEveryMonths} months`;
+  const resetOn = formatDate(snap.nextReset);
+  if (snap.grantsPerCycle <= 1) return `${grant} every ${cadence}. Resets ${resetOn}.`;
+  const nextBit = snap.nextRefill ? ` · next ${grant} ${formatDate(snap.nextRefill)}` : '';
+  return `${grant} every ${cadence} · ${snap.grants} of ${snap.grantsPerCycle} loaded · resets ${resetOn}${nextBit}`;
+}
+
+function walletLineForAdvisor(card) {
+  const spec = getCycleSpec(card);
+  const remaining = Number(card.remaining);
+  if (!spec) {
+    return `${card.name}:₪${remaining} (limit ₪${parseFloat(card.balance).toLocaleString()})`;
+  }
+  const snap = card.cycle || describeCycle(spec, new Date());
+  if (spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
+    return `${card.name}:₪${remaining} available now [MONTHLY: ₪${spec.grant} refills on the 1st; unused balance resets; only spending in that calendar month counts]`;
+  }
+  const resetOn = formatDate(snap.nextReset);
+  return `${card.name}:₪${remaining} available now [CYCLE: ₪${spec.grant} added every ${spec.refillEveryMonths} months; ${snap.grants} of ${snap.grantsPerCycle} grants loaded (₪${snap.loaded} before spending, ₪${snap.cycleCap} by the end of the cycle); unused balance stacks and resets to zero on ${resetOn}. A future plan date includes grants that will have arrived by then. Spending in the same reset window reduces that balance.]`;
+}
 
 const Modal = ({ isOpen, onClose, title, children }) => {
   const titleId = useId();
@@ -1298,7 +1354,7 @@ export default function App() {
   const [showCardForm, setShowCardForm] = useState(false);
   const [cardPendingDelete, setCardPendingDelete] = useState(null);
   const [editingCardId, setEditingCardId] = useState(null);
-  const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '', cardLink: '' });
+  const [newCard, setNewCard] = useState(EMPTY_CARD_FORM);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [newExpense, setNewExpense] = useState({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
@@ -1478,30 +1534,16 @@ export default function App() {
   };
 
   const cardBalances = useMemo(() => {
-    const monthKey = getCalendarMonthKey(new Date());
+    const asOf = new Date();
     return cards.map((card) => {
-      const spent = expenses.reduce((sum, e) => {
-        if (e.cardId !== card.id) return sum;
-        if (card.ruleType === 'monthly') {
-          if (getExpenseMonthKey(e) !== monthKey) return sum;
-        }
-        return sum + parseFloat(e.amount || 0);
-      }, 0);
-      const derivedCats = getDerivedCategories(card);
-      return { ...card, spent, remaining: parseFloat(card.balance) - spent, derivedCats };
+      const funds = computeCardFunds(card, expenses, asOf);
+      return { ...card, ...funds, derivedCats: getDerivedCategories(card) };
     });
   }, [cards, expenses]);
 
-  const getRemainingForCardMonth = (card, monthKey) => {
-    const spent = expenses.reduce((sum, e) => {
-      if (e.cardId !== card.id) return sum;
-      if (card.ruleType === 'monthly') {
-        if (getExpenseMonthKey(e) !== monthKey) return sum;
-      }
-      return sum + parseFloat(e.amount || 0);
-    }, 0);
-    return parseFloat(card.balance) - spent;
-  };
+  const getRemainingForCardAt = (card, asOf, editingExpense = null) => (
+    remainingForPlan(card, expenses, asOf, editingExpense)
+  );
 
   const uniqueCoverageCategories = useMemo(
     () => [...new Set(cardBalances.flatMap((c) => c.derivedCats || []))].sort(),
@@ -1514,7 +1556,7 @@ export default function App() {
     return aDays - bDays;
   }), [cardBalances]);
 
-  const totalInitialBalance = useMemo(() => cards.reduce((sum, card) => sum + parseFloat(card.balance || 0), 0), [cards]);
+  const totalLoadedBalance = useMemo(() => cardBalances.reduce((sum, card) => sum + (Number(card.loaded) || 0), 0), [cardBalances]);
   const totalRemainingBalance = useMemo(() => cardBalances.reduce((sum, card) => sum + card.remaining, 0), [cardBalances]);
   const totalPlannedExpenses = useMemo(() => expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0), [expenses]);
   const expiringAlerts = useMemo(() => cardBalances.filter((c) => c.ruleType === 'expires' && c.remaining > 0 && getDaysUntilExpiry(c.expiryDate) <= 30).sort((a, b) => getDaysUntilExpiry(a.expiryDate) - getDaysUntilExpiry(b.expiryDate)), [cardBalances]);
@@ -1573,11 +1615,7 @@ export default function App() {
     const activeClubsList = userClubs.map((c) => CLUBS[c].name).join(', ');
     const priorUserTexts = aiMessages.filter((m) => m.role === 'user').slice(-2).map((m) => m.text);
     const dealCatalog = retrieveRelevantDealsForChat(discountsData, userClubs, userText, priorUserTexts, 18000);
-    const walletString = cardBalances.map((c) => {
-      let line = `${c.name}:₪${c.remaining} (limit ₪${parseFloat(c.balance).toLocaleString()})`;
-      if (c.ruleType === 'monthly') line += ' [MONTHLY: balance resets on the 1st; spending counts per calendar month]';
-      return line;
-    }).join(' | ');
+    const walletString = cardBalances.map((c) => walletLineForAdvisor(c)).join(' | ');
     const futurePlansSummary = expenses
       .filter((e) => e.scheduledFor && new Date(e.scheduledFor) > new Date())
       .slice(0, 12)
@@ -1595,10 +1633,11 @@ USER'S DATA:
 - When the retrieved lines do not name a chain explicitly, you may still map the request to well-known Israeli retail / dining / cinema brands and combine with their wallet cards.
 - Show / ticket lines: If a performer name in RETRIEVED matches the app’s embedded Israeli stand‑up roster (same list the Clubs tab uses for סטנדאפ search), treat the event as סטנדאפ / קומדיה. If the name is not on that roster and the line does not mention סטנדאפ/קומדיה, assume a music act (זמר/להקה) unless the text clearly says otherwise.
 
-### MONTHLY & FUTURE PLANNING RULES:
-- Cards marked MONTHLY reset to their full limit on the 1st of each calendar month; only expenses in that month (by "planned for" date or logged date) reduce that month's balance.
-- If the user plans a purchase for a future month, treat that month's refilled balance when recommending combos (e.g. they can wait until after the 1st).
-- Mention split payment at checkout when a single card cannot cover the full amount this month but another card or cash/card can cover the gap.
+### RECURRING BALANCES & FUTURE PLANNING:
+- MONTHLY cards refill to their full grant on the 1st of each calendar month. Only expenses in that same month reduce that month's balance. Unused money does not carry over.
+- CYCLE cards add their grant on a schedule (for example every 3 months). Grants stack until a reset (for example once a year), when the balance returns to zero and the schedule starts again. Only expenses inside the current reset window reduce the balance. "Available now" includes only grants that have already landed. Do not treat the full cycle cap as spendable today.
+- If the user plans a purchase for a future date, use the balance as of that date. Monthly cards are full again after the 1st. Cycle cards include every grant that will have arrived by then, minus other plans in the same reset window.
+- Mention split payment at checkout when a single card cannot cover the full amount but another card or cash can cover the gap.
 
 ### TONE & PERSONALITY:
 - MANDATORY OUTPUT LANGUAGE: ${preferredLanguage === 'en' ? 'English' : 'Hebrew'} only. Do not mix languages unless user asks.
@@ -1654,7 +1693,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     setIsAiTyping(false);
   };
 
-  const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '', cardLink: '' }); setEditingCardId(null); setShowCardForm(false); };
+  const resetCardForm = () => { setNewCard(EMPTY_CARD_FORM); setEditingCardId(null); setShowCardForm(false); };
   const resetExpenseForm = () => {
     quickSpendAnchorCardIdRef.current = null;
     setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
@@ -1667,11 +1706,36 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     e.preventDefault();
     if (!user || !newCard.name || !newCard.balance) return;
     const program = PROGRAMS[newCard.programId];
+    let ruleType = newCard.ruleType;
+    let cycleFields = null;
+    if (isRecurringRule(newCard.ruleType)) {
+      const spec = specFromRecurringForm(newCard);
+      if (spec?.error) {
+        showToastMsg(spec.error, 'error');
+        return;
+      }
+      if (spec && spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
+        ruleType = 'monthly';
+      } else if (spec) {
+        ruleType = 'cycle';
+        cycleFields = {
+          refillEveryMonths: spec.refillEveryMonths,
+          resetEveryMonths: spec.resetEveryMonths,
+          cycleStartMonth: spec.cycleStartMonth,
+        };
+      }
+    }
     const cardData = {
       name: newCard.name, balance: parseFloat(newCard.balance), programId: newCard.programId,
-      ruleType: newCard.ruleType, expiryDate: newCard.ruleType === 'expires' ? newCard.expiryDate : '',
+      ruleType, expiryDate: ruleType === 'expires' ? newCard.expiryDate : '',
       categories: newCard.programId === 'CUSTOM' ? newCard.categories : [], color: program.color, updatedAt: new Date().toISOString()
     };
+    if (cycleFields) Object.assign(cardData, cycleFields);
+    else if (editingCardId) {
+      cardData.refillEveryMonths = deleteField();
+      cardData.resetEveryMonths = deleteField();
+      cardData.cycleStartMonth = deleteField();
+    }
     const hexRaw = (newCard.plasticAccentHex || '').trim();
     const normalizedHex = hexRaw.startsWith('#') ? hexRaw : (hexRaw ? `#${hexRaw}` : '');
     if (hexToRgb(normalizedHex)) cardData.plasticAccentHex = normalizedHex;
@@ -1690,11 +1754,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     if (!user || !newExpense.name || !newExpense.amount || !newExpense.expenseCategories?.length || !newExpense.cardId) return;
     const reqAmount = parseFloat(newExpense.amount);
     const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
-    const planningMonthKey = newExpense.scheduledFor
-      ? getCalendarMonthKey(newExpense.scheduledFor)
-      : getCalendarMonthKey(new Date());
+    const planningAsOf = planDateFromInput(newExpense.scheduledFor);
     const planningRemaining = selectedCard
-      ? getRemainingForCardMonth(selectedCard, planningMonthKey)
+      ? getRemainingForCardAt(selectedCard, planningAsOf)
       : 0;
     let saveAmount = reqAmount;
     let isSplit = false;
@@ -1751,7 +1813,26 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     if (target) await deleteCard(target.id);
   };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
-  const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [], plasticAccentHex: card.plasticAccentHex || '', cardLink: card.cardLink || '' }); setEditingCardId(card.id); setShowCardForm(true); };
+  const startEditCard = (card) => {
+    const preset = recurringPresetId(card) || 'monthly';
+    setNewCard({
+      ...EMPTY_CARD_FORM,
+      ...card,
+      balance: card.balance != null ? String(card.balance) : '',
+      programId: card.programId || 'CUSTOM',
+      ruleType: isRecurringRule(card.ruleType) ? card.ruleType : (card.ruleType || 'permanent'),
+      recurringPreset: isRecurringRule(card.ruleType) ? preset : 'monthly',
+      refillEveryMonths: card.refillEveryMonths ?? 3,
+      resetEveryMonths: card.resetEveryMonths ?? 12,
+      cycleStartMonth: card.cycleStartMonth ?? 1,
+      expiryDate: card.expiryDate || '',
+      categories: card.categories || [],
+      plasticAccentHex: card.plasticAccentHex || '',
+      cardLink: card.cardLink || '',
+    });
+    setEditingCardId(card.id);
+    setShowCardForm(true);
+  };
   const startEditExpense = (expense) => {
     quickSpendAnchorCardIdRef.current = null;
     const expenseCategories = expenseCategoriesForDisplay(expense);
@@ -2008,7 +2089,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[var(--cdv-band-divider)]">
                   <div className="p-7 sm:p-9">
                     <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Total portfolio</p>
-                    <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-on-band)]">{formatShekels(totalInitialBalance)}</p>
+                    <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-on-band)]">{formatShekels(totalLoadedBalance)}</p>
                     <p className="mt-2 text-sm text-[var(--cdv-on-band-mute)]">
                       Loaded across {cards.length} {cards.length === 1 ? 'card' : 'cards'}
                     </p>
@@ -2088,9 +2169,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     const ruleData = RULE_TYPES[card.ruleType?.toUpperCase()] || RULE_TYPES.PERMANENT;
                     const progData = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
                     const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
-                    const percentRemaining = Math.max(0, Math.min(100, (card.remaining / parseFloat(card.balance)) * 100));
+                    const pool = Number(card.loaded) || 0;
+                    const percentRemaining = pool > 0 ? Math.max(0, Math.min(100, (card.remaining / pool) * 100)) : 0;
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
                     const cardBalanceUrl = normalizeCardLink(card.cardLink);
+                    const behaviorLabel = cycleBadgeLabel(card);
+                    const scheduleLine = recurringStatusLine(card);
                     return (
                       <article
                         key={card.id}
@@ -2100,7 +2184,8 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                         <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                           <WalletCreditPlastic
                             balanceRemaining={card.remaining}
-                            balanceLimit={parseFloat(card.balance)}
+                            balanceLimit={pool}
+                            limitCaption={card.ruleType === 'cycle' ? 'This cycle' : 'Loaded'}
                             programName={progData.name}
                             chromeGradient={chromeGradient}
                             ruleType={card.ruleType}
@@ -2118,7 +2203,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                       ? (isExpiringSoon
                                         ? `${getDaysUntilExpiry(card.expiryDate)} days left`
                                         : `Expires ${formatDate(card.expiryDate)}`)
-                                      : ruleData.label}
+                                      : (behaviorLabel || ruleData.label)}
                                   </span>
                                   <span className="cdv-badge cdv-badge--neutral">{progData.name}</span>
                                 </div>
@@ -2132,7 +2217,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             <div>
                               <div className="mb-2 flex items-baseline justify-between gap-3">
                                 <Money value={card.remaining} className="text-lg font-semibold text-[var(--cdv-ink)]" />
-                                <span className="cdv-amount text-xs text-[var(--cdv-faint)]">of {formatShekels(parseFloat(card.balance))}</span>
+                                <span className="cdv-amount text-xs text-[var(--cdv-faint)]">of {formatShekels(pool)}</span>
                               </div>
                               <div
                                 className="cdv-meter"
@@ -2144,6 +2229,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                               >
                                 <div className={`cdv-meter__fill ${isExpiringSoon ? 'cdv-meter__fill--warning' : ''}`} style={{ width: `${percentRemaining}%` }} />
                               </div>
+                              {scheduleLine ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{scheduleLine}</p> : null}
                             </div>
 
                             <div className="flex flex-wrap gap-2">
@@ -2784,7 +2870,13 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div><label htmlFor="card-name" className="cdv-label">Display Name</label><input id="card-name" type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="cdv-input" placeholder="e.g. My Cibus Card" /></div>
-              <div><label htmlFor="card-balance" className="cdv-label">Total Limit (₪)</label><input id="card-balance" type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" /></div>
+              <div>
+                <label htmlFor="card-balance" className="cdv-label">{isRecurringRule(newCard.ruleType) ? 'Added each refill (₪)' : 'Total Limit (₪)'}</label>
+                <input id="card-balance" type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
+                {isRecurringRule(newCard.ruleType) ? (
+                  <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">This is one deposit. A monthly card reloads this amount. A longer cycle adds it again each refill until the reset.</p>
+                ) : null}
+              </div>
             </div>
 
             <div>
@@ -2842,13 +2934,26 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             <fieldset>
               <legend className="cdv-label">How the balance behaves</legend>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {Object.values(RULE_TYPES).map((rule) => {
-                  const isSelected = newCard.ruleType === rule.id;
+                {BALANCE_BEHAVIORS.map((rule) => {
+                  const isSelected = rule.id === 'recurring'
+                    ? isRecurringRule(newCard.ruleType)
+                    : newCard.ruleType === rule.id;
                   return (
                     <button
                       type="button"
                       key={rule.id}
-                      onClick={() => setNewCard({ ...newCard, ruleType: rule.id })}
+                      onClick={() => {
+                        if (rule.id === 'recurring') {
+                          const preset = newCard.recurringPreset || 'monthly';
+                          setNewCard({
+                            ...newCard,
+                            ruleType: preset === 'monthly' ? 'monthly' : 'cycle',
+                            recurringPreset: preset,
+                          });
+                          return;
+                        }
+                        setNewCard({ ...newCard, ruleType: rule.id });
+                      }}
                       aria-pressed={isSelected}
                       className="flex items-center gap-2.5 rounded-[var(--cdv-r-md)] border px-4 py-3 text-sm font-medium transition-colors duration-150"
                       style={isSelected
@@ -2862,6 +2967,130 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 })}
               </div>
             </fieldset>
+
+            {isRecurringRule(newCard.ruleType) && (() => {
+              const preset = newCard.recurringPreset || 'monthly';
+              const formSpec = specFromRecurringForm({ ...newCard, recurringPreset: preset });
+              const formError = formSpec?.error || '';
+              const showCycleStart = preset === 'quarterly-yearly' || (preset === 'custom' && Number(newCard.resetEveryMonths) > 1);
+              return (
+                <div className="space-y-4 animate-in slide-in-from-top-2 fade-in">
+                  <fieldset>
+                    <legend className="cdv-label">Refill schedule</legend>
+                    <div className="grid grid-cols-1 gap-2">
+                      {RECURRING_PRESETS.map((option) => {
+                        const isSelected = preset === option.id;
+                        return (
+                          <button
+                            type="button"
+                            key={option.id}
+                            onClick={() => {
+                              if (option.id === 'monthly') {
+                                setNewCard({ ...newCard, ruleType: 'monthly', recurringPreset: 'monthly' });
+                                return;
+                              }
+                              if (option.id === 'quarterly-yearly') {
+                                setNewCard({
+                                  ...newCard,
+                                  ruleType: 'cycle',
+                                  recurringPreset: 'quarterly-yearly',
+                                  refillEveryMonths: 3,
+                                  resetEveryMonths: 12,
+                                  cycleStartMonth: newCard.cycleStartMonth || 1,
+                                });
+                                return;
+                              }
+                              setNewCard({
+                                ...newCard,
+                                ruleType: 'cycle',
+                                recurringPreset: 'custom',
+                                refillEveryMonths: newCard.refillEveryMonths || 3,
+                                resetEveryMonths: newCard.resetEveryMonths || 12,
+                                cycleStartMonth: newCard.cycleStartMonth || 1,
+                              });
+                            }}
+                            aria-pressed={isSelected}
+                            className="flex flex-col gap-0.5 rounded-[var(--cdv-r-md)] border p-3 text-left transition-colors duration-150"
+                            style={isSelected
+                              ? { borderColor: 'var(--cdv-accent)', background: 'var(--cdv-accent-soft)' }
+                              : { borderColor: 'var(--cdv-hairline)', background: 'var(--cdv-surface-sunken)' }}
+                          >
+                            <span className={`text-sm font-semibold leading-tight ${isSelected ? 'text-[var(--cdv-accent)]' : 'text-[var(--cdv-ink)]'}`}>{option.label}</span>
+                            <span className="text-[11px] leading-snug text-[var(--cdv-mute)]">{option.detail}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+
+                  {preset === 'custom' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      <div>
+                        <label htmlFor="card-refill-months" className="cdv-label">Add money every (months)</label>
+                        <input
+                          id="card-refill-months"
+                          type="number"
+                          required
+                          min="1"
+                          max="36"
+                          step="1"
+                          value={newCard.refillEveryMonths}
+                          onChange={(e) => setNewCard({ ...newCard, ruleType: 'cycle', recurringPreset: 'custom', refillEveryMonths: e.target.value })}
+                          className="cdv-input"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="card-reset-months" className="cdv-label">Reset to zero every (months)</label>
+                        <input
+                          id="card-reset-months"
+                          type="number"
+                          required
+                          min="1"
+                          max="60"
+                          step="1"
+                          value={newCard.resetEveryMonths}
+                          onChange={(e) => setNewCard({ ...newCard, ruleType: 'cycle', recurringPreset: 'custom', resetEveryMonths: e.target.value })}
+                          className="cdv-input"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {showCycleStart && (
+                    <div>
+                      <label htmlFor="card-cycle-start" className="cdv-label">{preset === 'quarterly-yearly' ? 'Year begins in' : 'Cycle begins in'}</label>
+                      <select
+                        id="card-cycle-start"
+                        value={String(newCard.cycleStartMonth || 1)}
+                        onChange={(e) => setNewCard({ ...newCard, cycleStartMonth: Number(e.target.value) })}
+                        className="cdv-input sm:!w-1/2 appearance-none"
+                      >
+                        {CYCLE_MONTHS.map((month, index) => (
+                          <option key={month} value={index + 1}>{month}</option>
+                        ))}
+                      </select>
+                      <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">January follows a calendar year. Pick another month if this card’s year starts then. Refills land on the 1st.</p>
+                    </div>
+                  )}
+
+                  {formError ? (
+                    <p role="alert" className="text-xs leading-relaxed text-[var(--cdv-danger)]">{formError}</p>
+                  ) : (
+                    <p className="text-xs leading-relaxed text-[var(--cdv-mute)]">
+                      {formSpec?.grant
+                        ? recurringStatusLine({
+                          ruleType: formSpec.refillEveryMonths === 1 && formSpec.resetEveryMonths === 1 ? 'monthly' : 'cycle',
+                          balance: formSpec.grant,
+                          refillEveryMonths: formSpec.refillEveryMonths,
+                          resetEveryMonths: formSpec.resetEveryMonths,
+                          cycleStartMonth: formSpec.cycleStartMonth,
+                        })
+                        : 'Enter the amount added on each refill. That figure is one deposit, not the year’s total.'}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {newCard.ruleType === 'expires' && <div className="animate-in slide-in-from-top-2 fade-in"><label htmlFor="card-expiry" className="cdv-label">Expiration Date</label><input id="card-expiry" type="date" required value={newCard.expiryDate || ''} onChange={(e) => setNewCard({ ...newCard, expiryDate: e.target.value })} className="cdv-input sm:!w-1/2" /></div>}
 
@@ -2899,7 +3128,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               </div>
             )}
             <div className="border-t border-[var(--cdv-hairline)] pt-6">
-              <button type="submit" disabled={newCard.programId === 'CUSTOM' && newCard.categories.length === 0} className="cdv-btn cdv-btn--primary w-full !py-3">
+              <button type="submit" disabled={(newCard.programId === 'CUSTOM' && newCard.categories.length === 0) || Boolean(isRecurringRule(newCard.ruleType) && specFromRecurringForm(newCard)?.error)} className="cdv-btn cdv-btn--primary w-full !py-3">
                 {editingCardId ? 'Save changes' : 'Add to Wallet'}
               </button>
             </div>
@@ -2978,7 +3207,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             <div>
               <label htmlFor="exp-month" className="cdv-label">Plan for month (optional)</label>
               <input id="exp-month" type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value })} className="cdv-input sm:!w-64" />
-              <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">Pick a date in the month you intend to pay. <strong className="font-semibold text-[var(--cdv-body)]">Monthly</strong> cards count spending per calendar month and refill on the 1st; future dates let you plan against that month&apos;s balance.</p>
+              <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">Pick the date you intend to pay. <strong className="font-semibold text-[var(--cdv-body)]">Monthly</strong> cards refill on the 1st and ignore other months. Cards that stack, such as a quarterly grant with a yearly reset, include every deposit that will have arrived by this date.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -2995,17 +3224,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     const noCatsYet = !newExpense.expenseCategories?.length;
                     const isAllowedByRules = noCatsYet || cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants);
                     const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
-                    const targetMonthKey = newExpense.scheduledFor
-                      ? getCalendarMonthKey(newExpense.scheduledFor)
-                      : getCalendarMonthKey(new Date());
+                    const planAsOf = planDateFromInput(newExpense.scheduledFor);
                     const editingExpenseRow = editingExpenseId ? expenses.find((ex) => ex.id === editingExpenseId) : null;
-                    let rem = getRemainingForCardMonth(card, targetMonthKey);
-                    if (editingExpenseRow && editingExpenseRow.cardId === card.id) {
-                      const oldBucket = getExpenseMonthKey(editingExpenseRow);
-                      if (card.ruleType !== 'monthly' || oldBucket === targetMonthKey) {
-                        rem += parseFloat(editingExpenseRow.amount || 0);
-                      }
-                    }
+                    const rem = getRemainingForCardAt(card, planAsOf, editingExpenseRow);
                     const canAfford = isEditingCurrent || rem >= parseFloat(newExpense.amount || 0);
                     const isAnchorOrSelected = card.id === newExpense.cardId;
                     const isSelectable = noCatsYet
@@ -3022,10 +3243,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
             {newExpense.isManualSplit && !editingExpenseId && newExpense.cardId && (() => {
               const splitCard = cardBalances.find((c) => c.id === newExpense.cardId);
-              const splitMonthKey = newExpense.scheduledFor
-                ? getCalendarMonthKey(newExpense.scheduledFor)
-                : getCalendarMonthKey(new Date());
-              const splitCap = splitCard ? getRemainingForCardMonth(splitCard, splitMonthKey) : 0;
+              const splitCap = splitCard ? getRemainingForCardAt(splitCard, planDateFromInput(newExpense.scheduledFor)) : 0;
               return (
                 <div className="animate-in fade-in slide-in-from-top-2 rounded-[var(--cdv-r-md)] border border-[var(--cdv-accent-border)] bg-[var(--cdv-accent-soft)] p-4">
                   <label htmlFor="exp-charge" className="cdv-label">Amount to charge to selected card (₪)</label>
@@ -3037,10 +3255,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             <div className="border-t border-[var(--cdv-hairline)] pt-6">
               {(() => {
                 const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
-                const planMonthKey = newExpense.scheduledFor
-                  ? getCalendarMonthKey(newExpense.scheduledFor)
-                  : getCalendarMonthKey(new Date());
-                const planRemaining = selectedCard ? getRemainingForCardMonth(selectedCard, planMonthKey) : 0;
+                const planRemaining = selectedCard ? getRemainingForCardAt(selectedCard, planDateFromInput(newExpense.scheduledFor)) : 0;
                 const reqAmount = parseFloat(newExpense.amount || 0);
                 let actualLogAmount = reqAmount;
                 let isSplitNeeded = false;
