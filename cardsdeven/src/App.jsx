@@ -14,7 +14,7 @@ import {
   CreditCard, LayoutDashboard, Receipt, Plus, Trash2, AlertCircle,
   CalendarDays, RefreshCw, Infinity as InfinityIcon, CheckCircle2,
   Edit2, Moon, Sun, PieChart, LogOut, Lock, Mail,
-  Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info
+  Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info, ExternalLink
 } from 'lucide-react';
 
 /** Default web app config (Firebase console → Project settings). Override with VITE_FIREBASE_* in .env for other envs. */
@@ -1002,6 +1002,19 @@ function formatPlasticExpiry(iso) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** http(s) balance-page URL, or empty when missing / not a web link. */
+function normalizeCardLink(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
 function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chromeGradient, ruleType, expiryDate, isExpiringSoon }) {
   const showExpiry = ruleType === 'expires' && expiryDate;
   return (
@@ -1188,7 +1201,7 @@ export default function App() {
   const quickSpendAnchorCardIdRef = useRef(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
-  const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '' });
+  const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '', cardLink: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [newExpense, setNewExpense] = useState({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
@@ -1543,7 +1556,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     setIsAiTyping(false);
   };
 
-  const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '' }); setEditingCardId(null); setShowCardForm(false); };
+  const resetCardForm = () => { setNewCard({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '', cardLink: '' }); setEditingCardId(null); setShowCardForm(false); };
   const resetExpenseForm = () => {
     quickSpendAnchorCardIdRef.current = null;
     setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
@@ -1565,6 +1578,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     const normalizedHex = hexRaw.startsWith('#') ? hexRaw : (hexRaw ? `#${hexRaw}` : '');
     if (hexToRgb(normalizedHex)) cardData.plasticAccentHex = normalizedHex;
     else if (editingCardId) cardData.plasticAccentHex = deleteField();
+    const cardLink = normalizeCardLink(newCard.cardLink);
+    if (cardLink) cardData.cardLink = cardLink;
+    else if (editingCardId) cardData.cardLink = deleteField();
     if (editingCardId) await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), editingCardId), cardData);
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'cards')), cardData);
     showToastMsg(editingCardId ? 'Card updated' : 'Card added to wallet');
@@ -1631,7 +1647,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   const deleteCard = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), id)); showToastMsg('Card removed'); } };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
-  const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [], plasticAccentHex: card.plasticAccentHex || '' }); setEditingCardId(card.id); setShowCardForm(true); };
+  const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [], plasticAccentHex: card.plasticAccentHex || '', cardLink: card.cardLink || '' }); setEditingCardId(card.id); setShowCardForm(true); };
   const startEditExpense = (expense) => {
     quickSpendAnchorCardIdRef.current = null;
     const expenseCategories = expenseCategoriesForDisplay(expense);
@@ -1854,6 +1870,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
                     const percentRemaining = Math.max(0, Math.min(100, (card.remaining / parseFloat(card.balance)) * 100));
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
+                    const cardBalanceUrl = normalizeCardLink(card.cardLink);
                     return (
                       <div
                         key={card.id}
@@ -1897,6 +1914,17 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                               <Zap size={18} className="fill-current shrink-0" />
                               <span>Quick spend</span>
                             </button>
+                            {cardBalanceUrl ? (
+                              <a
+                                href={cardBalanceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full flex items-center justify-center gap-2 py-3 border-[3px] border-slate-900 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-extrabold text-sm shadow-[4px_4px_0_#6366f1] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0_#6366f1] transition-all"
+                              >
+                                <ExternalLink size={18} className="shrink-0" />
+                                <span>לינק לכרטיס</span>
+                              </a>
+                            ) : null}
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1 border-t-[3px] border-slate-200 dark:border-slate-700">
@@ -2277,6 +2305,21 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Display Name</label><input type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" placeholder="e.g. My Cibus Card" /></div>
               <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Total Limit (₪)</label><input type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono font-bold text-lg" placeholder="0.00" /></div>
+            </div>
+
+            <div>
+              <label htmlFor="cdv-card-link" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">לינק לכרטיס</label>
+              <input
+                id="cdv-card-link"
+                type="url"
+                inputMode="url"
+                value={newCard.cardLink || ''}
+                onChange={(e) => setNewCard({ ...newCard, cardLink: e.target.value })}
+                className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium"
+                placeholder="https://…"
+                dir="ltr"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Optional. A button appears on the wallet card only when this balance link is saved.</p>
             </div>
 
             <div className="p-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 space-y-3">
