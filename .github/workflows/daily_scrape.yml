@@ -1,15 +1,25 @@
-name: Daily Behatsdaa Scraper
+name: Daily scrapers
 
 on:
   schedule:
-    - cron: '0 8 * * *' # Runs automatically every day at 08:00 UTC
+    # 12:45 Israel (UTC+3). GitHub cron is UTC, so this is 09:45 UTC.
+    # After the winter clock change (UTC+2) this runs at 11:45 local.
+    - cron: '45 9 * * *'
   workflow_dispatch: # This allows you to click a button to run it manually
 
 jobs:
   scrape-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required so the bot can commit the new JSON file
+      contents: write # Required so the bot can commit the new JSON files
+
+    env:
+      SKIP_GIT_PUSH: "1"
+      DREAMCARD_HEADLESS: "1"
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+      BEHATSDAA_ID: ${{ secrets.BEHATSDAA_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - name: Checkout Repository
@@ -23,22 +33,33 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install playwright firebase-admin playwright-stealth python-dotenv google-genai
+          pip install -r requirements.txt
           playwright install chromium
 
-      - name: Run Scraper
-        env:
-          SKIP_GIT_PUSH: "1"
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
-          BEHATSDAA_ID: ${{ secrets.BEHATSDAA_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python scraper.py
+      - name: Run Behatsdaa scraper
+        id: behatsdaa
+        continue-on-error: true
+        run: python scraper_behatsdaa.py
 
-      - name: Commit and push slim Behatsdaa JSON
+      - name: Run Pais Plus scraper
+        id: pais
+        continue-on-error: true
+        run: python scraper_pais_plus.py
+
+      - name: Run DreamCard scraper
+        id: dreamcard
+        continue-on-error: true
+        run: python scrape_dreamcard.py
+
+      - name: Commit and push scraped deals
+        if: always()
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add cardsdeven/public/behatsdaa_deals.json
-          git commit -m "chore: auto-update behatsdaa_deals.json" || echo "No changes to commit"
+          git add cardsdeven/public/behatsdaa_deals.json cardsdeven/public/pais_plus_deals.json cardsdeven/public/dreamcard_deals.json
+          git commit -m "chore: auto-update scraped deals" || echo "No changes to commit"
           git push
+
+      - name: Fail if a scraper failed
+        if: always() && (steps.behatsdaa.outcome == 'failure' || steps.pais.outcome == 'failure' || steps.dreamcard.outcome == 'failure')
+        run: exit 1
