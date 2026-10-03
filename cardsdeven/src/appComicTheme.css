@@ -1,57 +1,516 @@
-/* CardsDeVen global “comic / brutalist” shell — matches Smart AI chat energy */
+/*
+ * CardsDeVen shell primitives.
+ *
+ * Elevation is carried by hairlines and surface-luminance shifts, not by drop
+ * shadows. Only genuinely floating layers (nav, modal, toast) get a shadow.
+ */
 
-.cdv-comic-bg {
-  background: #e8ecf4;
-  color: #0f172a;
+.cdv-shell {
+  background: var(--cdv-canvas);
+  color: var(--cdv-body);
 }
 
-.dark .cdv-comic-bg {
-  background: #020617;
-  color: #e2e8f0;
+/* ---------- Surfaces ---------- */
+
+.cdv-panel {
+  background: var(--cdv-surface);
+  border: 1px solid var(--cdv-hairline);
+  border-radius: var(--cdv-r-lg);
 }
 
-.cdv-comic-header {
-  background: #ffffff;
-  border-bottom: 4px solid #0f172a;
-  box-shadow: 0 6px 0 0 #6366f1;
+.cdv-panel--quiet {
+  background: var(--cdv-surface-sunken);
+  border-color: var(--cdv-hairline);
 }
 
-.dark .cdv-comic-header {
-  background: #0f172a;
-  border-bottom-color: #475569;
-  box-shadow: 0 6px 0 0 #4f46e5;
+/* Interactive panels lift on hover; transform only, so it stays on the compositor. */
+.cdv-panel--interactive {
+  transition:
+    transform var(--cdv-base) var(--cdv-ease),
+    border-color var(--cdv-base) var(--cdv-ease),
+    box-shadow var(--cdv-base) var(--cdv-ease);
+  will-change: transform;
 }
 
-.cdv-comic-nav {
-  background: #ffffff !important;
-  border-top: 2px solid #0f172a !important;
-  box-shadow: 0 -3px 0 0 #6366f1 !important;
+.cdv-panel--interactive:hover {
+  transform: translateY(-2px);
+  border-color: var(--cdv-hairline-strong);
+  box-shadow: var(--cdv-shadow-md);
 }
 
-.dark .cdv-comic-nav {
-  background: #0f172a !important;
-  border-top-color: #475569 !important;
-  box-shadow: 0 -3px 0 0 #4f46e5 !important;
+.cdv-panel--empty {
+  background: transparent;
+  border: 1px dashed var(--cdv-hairline-strong);
+  border-radius: var(--cdv-r-lg);
 }
 
-/* Thick offset panel — use with rounded-2xl + padding */
-.cdv-comic-panel {
-  border: 3px solid #1e293b;
-  background: #ffffff;
-  box-shadow: 8px 8px 0 #6366f1;
+/* Feature band — a teal wash so the portfolio reads as colour, not a black slab. */
+.cdv-band-inverse {
+  background: linear-gradient(128deg, #1c6b56 0%, #12382f 42%, #14171a 100%);
+  color: var(--cdv-on-band);
+  border: 1px solid transparent;
+  border-radius: var(--cdv-r-xl);
 }
 
-.dark .cdv-comic-panel {
-  border-color: #475569;
-  background: #0f172a;
-  box-shadow: 8px 8px 0 #4f46e5;
+.dark .cdv-band-inverse {
+  background: linear-gradient(128deg, #1f7a62 0%, #14352c 46%, #12161a 100%);
+  border-color: var(--cdv-hairline);
 }
 
-.cdv-comic-panel--dashed {
-  border-style: dashed;
+/* ---------- Chrome ---------- */
+
+.cdv-topbar {
+  background: color-mix(in srgb, var(--cdv-canvas) 86%, transparent);
+  border-bottom: 1px solid var(--cdv-hairline);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
 
-.cdv-comic-title {
-  font-family: "Archivo Black", ui-sans-serif, system-ui, sans-serif;
+.cdv-nav {
+  background: color-mix(in srgb, var(--cdv-canvas) 88%, transparent);
+  border-top: 1px solid var(--cdv-hairline);
+  box-shadow: var(--cdv-shadow-lg);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------- Type ---------- */
+
+.cdv-display {
+  font-family: 'Archivo Black', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.028em;
+  line-height: 1.04;
+  color: var(--cdv-ink);
+  text-wrap: balance;
+}
+
+.cdv-eyebrow {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cdv-faint);
+}
+
+/*
+ * Money. IBM Plex Mono is loaded for this: it carries the shekel sign (U+20AA),
+ * which the Merta Sans display face lacks, and its figures are tabular.
+ */
+.cdv-amount {
+  font-family: 'IBM Plex Mono', ui-monospace, 'Segoe UI', monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
   letter-spacing: -0.02em;
+}
+
+/* ---------- Controls ---------- */
+
+.cdv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  padding: 0.6875rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--cdv-fast) var(--cdv-ease),
+    border-color var(--cdv-fast) var(--cdv-ease),
+    color var(--cdv-fast) var(--cdv-ease),
+    transform var(--cdv-fast) var(--cdv-ease);
+}
+
+.cdv-btn:active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+.cdv-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary = inverted ink. High contrast without needing a loud hue. */
+.cdv-btn--primary {
+  background: var(--cdv-accent);
+  color: var(--cdv-on-accent);
+}
+
+.cdv-btn--primary:hover:not(:disabled) {
+  background: var(--cdv-accent-hover);
+}
+
+.cdv-btn--accent {
+  background: var(--cdv-accent);
+  color: var(--cdv-on-accent);
+}
+
+.cdv-btn--accent:hover:not(:disabled) {
+  background: var(--cdv-accent-hover);
+}
+
+.cdv-btn--outline {
+  background: var(--cdv-surface);
+  border-color: var(--cdv-hairline-strong);
+  color: var(--cdv-ink);
+}
+
+.cdv-btn--outline:hover:not(:disabled) {
+  border-color: var(--cdv-hairline-heavy);
+  background: var(--cdv-surface-sunken);
+}
+
+.cdv-btn--ghost {
+  background: transparent;
+  color: var(--cdv-mute);
+}
+
+.cdv-btn--ghost:hover:not(:disabled) {
+  background: var(--cdv-accent-soft);
+  color: var(--cdv-ink);
+}
+
+.cdv-btn--danger-ghost {
+  background: transparent;
+  color: var(--cdv-danger);
+}
+
+.cdv-btn--danger-ghost:hover:not(:disabled) {
+  background: var(--cdv-danger-soft);
+}
+
+/* Icon-only square control */
+.cdv-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--cdv-r-sm);
+  color: var(--cdv-mute);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--cdv-fast) var(--cdv-ease),
+    color var(--cdv-fast) var(--cdv-ease);
+}
+
+.cdv-icon-btn:hover {
+  background: var(--cdv-accent-soft);
+  color: var(--cdv-ink);
+}
+
+.cdv-icon-btn--danger:hover {
+  background: var(--cdv-danger-soft);
+  color: var(--cdv-danger);
+}
+
+/* ---------- Inputs ---------- */
+
+.cdv-input {
+  width: 100%;
+  background: var(--cdv-surface-sunken);
+  border: 1px solid var(--cdv-hairline-strong);
+  border-radius: var(--cdv-r-md);
+  padding: 0.75rem 0.875rem;
+  color: var(--cdv-ink);
+  font-size: 0.9375rem;
+  transition:
+    border-color var(--cdv-fast) var(--cdv-ease),
+    background-color var(--cdv-fast) var(--cdv-ease);
+}
+
+.cdv-input::placeholder {
+  color: var(--cdv-faint);
+}
+
+.cdv-input:hover {
+  border-color: var(--cdv-hairline-heavy);
+}
+
+.cdv-input:focus {
+  outline: none;
+  background: var(--cdv-surface);
+  border-color: var(--cdv-accent);
+  box-shadow: 0 0 0 3px var(--cdv-accent-soft);
+}
+
+.cdv-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cdv-body);
+  margin-bottom: 0.4375rem;
+}
+
+/* ---------- Chips & badges ---------- */
+
+.cdv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--cdv-hairline);
+  border-radius: 9999px;
+  background: var(--cdv-surface-sunken);
+  padding: 0.3125rem 0.6875rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--cdv-body);
+  white-space: nowrap;
+}
+
+.cdv-chip--selectable {
+  cursor: pointer;
+  transition:
+    background-color var(--cdv-fast) var(--cdv-ease),
+    border-color var(--cdv-fast) var(--cdv-ease),
+    color var(--cdv-fast) var(--cdv-ease);
+}
+
+.cdv-chip--selectable:hover {
+  border-color: var(--cdv-hairline-heavy);
+}
+
+.cdv-chip--on {
+  background: var(--cdv-surface-inverse);
+  border-color: transparent;
+  color: var(--cdv-on-inverse);
+}
+
+/*
+ * Category identity. --cat-h is set inline; light and dark each pick a
+ * lightness that stays readable on its own canvas.
+ */
+.cdv-cat,
+.cdv-cat-mark,
+.cdv-cat-card,
+.cdv-club {
+  --cat: hsl(var(--cat-h) 58% 30%);
+  --cat-soft: hsl(var(--cat-h) 70% 46% / 0.16);
+  --cat-border: hsl(var(--cat-h) 48% 38% / 0.4);
+  --cat-solid: hsl(var(--cat-h) 52% 36%);
+}
+
+.dark .cdv-cat,
+.dark .cdv-cat-mark,
+.dark .cdv-cat-card,
+.dark .cdv-club {
+  --cat: hsl(var(--cat-h) 72% 74%);
+  --cat-soft: hsl(var(--cat-h) 55% 52% / 0.22);
+  --cat-border: hsl(var(--cat-h) 55% 62% / 0.42);
+  --cat-solid: hsl(var(--cat-h) 46% 42%);
+}
+
+.cdv-chip.cdv-cat {
+  background: var(--cat-soft);
+  border-color: var(--cat-border);
+  color: var(--cat);
+}
+
+.cdv-chip.cdv-cat.cdv-chip--on {
+  background: var(--cat-solid);
+  border-color: transparent;
+  color: #fff;
+}
+
+.cdv-cat-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--cat-soft);
+  border: 1px solid var(--cat-border);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.cdv-cat-card {
+  background:
+    linear-gradient(180deg, var(--cat-soft), transparent 64%),
+    var(--cdv-surface);
+  border-color: var(--cat-border);
+  box-shadow: inset 0 3px 0 var(--cat-solid);
+}
+
+.cdv-cat-card.cdv-panel--interactive:hover {
+  border-color: var(--cat-border);
+  box-shadow: inset 0 3px 0 var(--cat-solid), var(--cdv-shadow-md);
+}
+
+.cdv-club--on {
+  background: var(--cat-soft);
+  border-color: var(--cat-border);
+}
+
+.cdv-club--on .cdv-eyebrow,
+.cdv-club__mark {
+  color: var(--cat);
+}
+
+.cdv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: var(--cdv-r-xs);
+  padding: 0.1875rem 0.4375rem;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cdv-badge--positive {
+  background: var(--cdv-positive-soft);
+  color: var(--cdv-positive);
+}
+
+.cdv-badge--warning {
+  background: var(--cdv-warning-soft);
+  color: var(--cdv-warning);
+}
+
+.cdv-badge--neutral {
+  background: var(--cdv-surface-sunken);
+  border: 1px solid var(--cdv-hairline);
+  color: var(--cdv-mute);
+}
+
+.cdv-badge--accent {
+  background: var(--cdv-accent-soft);
+  color: var(--cdv-accent);
+}
+
+/* ---------- Meter ---------- */
+
+.cdv-meter {
+  height: 0.375rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--cdv-hairline);
+}
+
+.cdv-meter__fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--cdv-accent);
+  transition: width var(--cdv-slow) var(--cdv-ease);
+}
+
+.cdv-meter__fill--warning {
+  background: var(--cdv-warning);
+}
+
+/* ---------- Divider ---------- */
+
+.cdv-divide > * + * {
+  border-top: 1px solid var(--cdv-hairline);
+}
+
+/* ---------- Focus: one visible ring for every interactive element ---------- */
+
+.cdv-btn:focus-visible,
+.cdv-icon-btn:focus-visible,
+.cdv-chip--selectable:focus-visible,
+.cdv-nav-item:focus-visible,
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--cdv-focus-ring);
+}
+
+.cdv-input:focus-visible {
+  outline: none;
+}
+
+/* ---------- Bottom nav ---------- */
+
+.cdv-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1875rem;
+  min-width: 44px;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--cdv-r-sm);
+  color: var(--cdv-faint);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--cdv-fast) var(--cdv-ease),
+    background-color var(--cdv-fast) var(--cdv-ease);
+}
+
+.cdv-nav-item:hover {
+  color: var(--cdv-body);
+}
+
+.cdv-nav-item--on {
+  color: var(--cdv-accent);
+  background: var(--cdv-accent-soft);
+}
+
+.cdv-nav-item__label {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ---------- Skip link ---------- */
+
+.cdv-skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 50%;
+  z-index: 300;
+  transform: translate(-50%, -160%);
+  background: var(--cdv-surface-inverse);
+  color: var(--cdv-on-inverse);
+  border-radius: 9999px;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: transform var(--cdv-base) var(--cdv-ease);
+}
+
+.cdv-skip-link:focus-visible {
+  transform: translate(-50%, 0);
+}
+
+/* ---------- Motion preferences ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .cdv-panel--interactive:hover {
+    transform: none;
+  }
 }

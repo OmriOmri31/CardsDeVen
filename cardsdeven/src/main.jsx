@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './designTokens.css'
 import './appComicTheme.css'
 import './walletCreditCard.css'
 import './aiChatBrutalist.css'

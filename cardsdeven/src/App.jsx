@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useId } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -49,6 +49,46 @@ const GRADIENTS = [
   'bg-gradient-to-br from-slate-700 to-slate-900',
 ];
 
+/** The club catalogue runs to thousands of rows; page it instead of mounting all of them. */
+const DEALS_PAGE_SIZE = 60;
+
+const AI_STARTER_PROMPTS = [
+  'Which card should I use for groceries this week?',
+  'I need pizza for 10 people under ₪300',
+  'What expires soonest and how do I spend it?',
+  'Best fashion deal across my active clubs',
+];
+
+/* --- FORMATTING ---------------------------------------------------------- */
+
+const shekelWhole = new Intl.NumberFormat('en-IL', {
+  style: 'currency', currency: 'ILS', minimumFractionDigits: 0, maximumFractionDigits: 0,
+});
+const shekelPrecise = new Intl.NumberFormat('en-IL', {
+  style: 'currency', currency: 'ILS', minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+
+/** Agorot are shown only when the amount actually has them, never as a stray ".2". */
+function formatShekels(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return shekelWhole.format(0);
+  return Number.isInteger(n) ? shekelWhole.format(n) : shekelPrecise.format(n);
+}
+
+const dayMonthYear = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const dayMonth = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+
+function formatDate(value, { withYear = true } = {}) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return (withYear ? dayMonthYear : dayMonth).format(d);
+}
+
+/** Tabular, shekel-capable numerals. The display face has no U+20AA glyph. */
+function Money({ value, className = '' }) {
+  return <span className={`cdv-amount ${className}`}>{formatShekels(value)}</span>;
+}
+
 // --- DOMAIN KNOWLEDGE: CATEGORIES & ICONS ---
 const CATEGORY_ICONS = {
   "Supermarkets & Groceries": "🛒", "Fashion & Apparel": "👗", "Home & Household": "🛋️",
@@ -57,6 +97,29 @@ const CATEGORY_ICONS = {
   "Fuel & Transportation": "⛽", "Fitness & Gym": "🏋️", "Kids & Baby": "🧸", "Other": "🏷️"
 };
 const CATEGORIES = Object.keys(CATEGORY_ICONS);
+
+/** Hue per category, so spending reads by colour as well as by name. */
+const CATEGORY_HUE = {
+  'Supermarkets & Groceries': 152,
+  'Fashion & Apparel': 332,
+  'Home & Household': 28,
+  'Hotels & Lodging': 214,
+  'Spas & Wellness': 174,
+  'Electronics': 228,
+  'Cinemas': 8,
+  'Food Chains & Restaurants': 22,
+  'Online Retail & Delivery': 262,
+  'Pharmacy & Health': 348,
+  'Fuel & Transportation': 42,
+  'Fitness & Gym': 88,
+  'Kids & Baby': 312,
+  'Other': 250,
+};
+
+function categoryHueStyle(category) {
+  const h = CATEGORY_HUE[category];
+  return h == null ? undefined : { '--cat-h': h };
+}
 
 // --- DOMAIN KNOWLEDGE: CATEGORY SEARCH ALIASES ---
 const CATEGORY_ALIASES = {
@@ -160,9 +223,9 @@ function buildPlasticGradientFromHex(hex) {
 }
 
 const CLUBS = {
-  BEHATSDAA: { id: 'BEHATSDAA', name: 'בהצדעה', color: 'bg-blue-600' },
-  PAIS_PLUS: { id: 'PAIS_PLUS', name: 'פיס פלוס', color: 'bg-red-500' },
-  DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', color: 'bg-slate-900' }
+  BEHATSDAA: { id: 'BEHATSDAA', name: 'בהצדעה', hue: 214 },
+  PAIS_PLUS: { id: 'PAIS_PLUS', name: 'פיס פלוס', hue: 4 },
+  DREAMCARD: { id: 'DREAMCARD', name: 'DreamCard', hue: 268 },
 };
 
 /** Fallback בהצדעה rows when /data.json is missing or empty; scraped deals replace these when present. */
@@ -1038,10 +1101,10 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, programName, chro
           </div>
         ) : null}
         <div className="wcc-amounts">
-          <div className="wcc-original">ORIGINAL VALUE ₪{balanceLimit.toLocaleString()}</div>
+          <div className="wcc-original">Loaded <span className="cdv-amount">{formatShekels(balanceLimit)}</span></div>
           <div className="wcc-current-block">
             <span className="wcc-current-label">Remaining</span>
-            <div className="wcc-current">₪{balanceRemaining.toLocaleString()}</div>
+            <div className="wcc-current cdv-amount">{formatShekels(balanceRemaining)}</div>
           </div>
         </div>
       </div>
@@ -1141,31 +1204,64 @@ const RULE_TYPES = {
 };
 
 const Modal = ({ isOpen, onClose, title, children }) => {
+  const titleId = useId();
+
+  /* Escape closes, and the page behind must not scroll while a sheet is open. */
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-t-[2rem] sm:rounded-[2rem] w-full max-w-xl shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] border-t sm:border border-slate-200 dark:border-slate-800">
-        <div className="px-6 py-4 sm:py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-20">
-          <h3 className="font-bold text-xl text-slate-800 dark:text-slate-100">{title}</h3>
-          <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-full transition-colors"><X size={20} /></button>
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-[rgba(10,12,13,0.55)] p-0 backdrop-blur-[3px] animate-in fade-in duration-200 sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[var(--cdv-r-xl)] border border-[var(--cdv-hairline)] bg-[var(--cdv-surface)] shadow-[var(--cdv-shadow-float)] animate-in slide-in-from-bottom-8 duration-200 sm:max-h-[86dvh] sm:rounded-[var(--cdv-r-xl)] sm:zoom-in-95"
+        style={{ overscrollBehavior: 'contain', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
+        <div className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-[var(--cdv-hairline)] bg-[var(--cdv-surface)] px-6 py-4">
+          <h3 id={titleId} className="cdv-display text-lg min-w-0 break-words">{title}</h3>
+          <button type="button" onClick={onClose} className="cdv-icon-btn shrink-0" aria-label="Close dialog"><X size={18} aria-hidden /></button>
         </div>
-        <div className="p-6 pb-10 sm:pb-6 overflow-y-auto">{children}</div>
+        <div className="overflow-y-auto px-6 py-6" style={{ overscrollBehavior: 'contain' }}>{children}</div>
       </div>
     </div>
   );
 };
 
-const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-full" }) => {
+const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-[8px]" }) => {
+  const [failed, setFailed] = useState(false);
   const fallbackEmoji = CATEGORY_ICONS[category] || "🏷️";
   return (
-    <div className={`relative flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0 ${className} overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700`}>
-      <img
-        src={getLogoPath(merchantName)}
-        alt={merchantName}
-        className="w-full h-full object-cover"
-        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-      />
-      <span className="absolute text-sm" style={{ display: 'none' }}>{fallbackEmoji}</span>
+    <div className={`relative flex shrink-0 items-center justify-center overflow-hidden border border-[var(--cdv-hairline)] bg-[var(--cdv-surface-sunken)] ${className}`}>
+      {failed ? (
+        <span className="text-sm" aria-hidden>{fallbackEmoji}</span>
+      ) : (
+        <img
+          src={getLogoPath(merchantName)}
+          alt=""
+          width={40}
+          height={40}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
     </div>
   );
 };
@@ -1200,6 +1296,7 @@ export default function App() {
   const aiRequestInFlightRef = useRef(false);
   const quickSpendAnchorCardIdRef = useRef(null);
   const [showCardForm, setShowCardForm] = useState(false);
+  const [cardPendingDelete, setCardPendingDelete] = useState(null);
   const [editingCardId, setEditingCardId] = useState(null);
   const [newCard, setNewCard] = useState({ name: '', balance: '', programId: 'CUSTOM', ruleType: 'permanent', expiryDate: '', categories: [], plasticAccentHex: '', cardLink: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
@@ -1209,6 +1306,7 @@ export default function App() {
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
   const [clubSearch, setClubSearch] = useState('');
+  const [dealsShown, setDealsShown] = useState(DEALS_PAGE_SIZE);
   const [paisPlusDiscounts, setPaisPlusDiscounts] = useState([]);
   const [behatsdaaScrapedDiscounts, setBehatsdaaScrapedDiscounts] = useState([]);
   const [dreamcardScrapedDiscounts, setDreamcardScrapedDiscounts] = useState([]);
@@ -1646,6 +1744,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   };
 
   const deleteCard = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), id)); showToastMsg('Card removed'); } };
+  const requestDeleteCard = (card) => setCardPendingDelete(card);
+  const confirmDeleteCard = async () => {
+    const target = cardPendingDelete;
+    setCardPendingDelete(null);
+    if (target) await deleteCard(target.id);
+  };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
   const startEditCard = (card) => { setNewCard({ ...card, programId: card.programId || 'CUSTOM', expiryDate: card.expiryDate || '', categories: card.categories || [], plasticAccentHex: card.plasticAccentHex || '', cardLink: card.cardLink || '' }); setEditingCardId(card.id); setShowCardForm(true); };
   const startEditExpense = (expense) => {
@@ -1717,41 +1821,107 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     });
   };
 
-  if (loadingAuth) return <div className={`flex min-h-screen min-h-0 flex-1 flex-col ${isDarkMode ? 'dark' : ''}`}><div className="flex min-h-0 flex-1 cdv-comic-bg items-center justify-center text-indigo-600 dark:text-indigo-400"><Loader2 className="animate-spin" size={40} /></div></div>;
+  if (loadingAuth) {
+    return (
+      <div className={`flex min-h-screen min-h-0 flex-1 flex-col ${isDarkMode ? 'dark' : ''}`}>
+        <div className="cdv-shell flex min-h-0 flex-1 items-center justify-center" role="status">
+          <Loader2 className="animate-spin text-[var(--cdv-faint)]" size={24} aria-hidden />
+          <span className="sr-only">Loading…</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
       <div className={`flex min-h-screen min-h-0 flex-1 flex-col ${isDarkMode ? 'dark' : ''}`}>
-        <div className="flex min-h-0 flex-1 flex-col cdv-comic-bg items-center justify-center p-4 transition-colors duration-300">
-          <div className="mb-10 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 p-5 rounded-3xl border-[3px] border-slate-900 dark:border-slate-600 shadow-[8px_8px_0_#312e81] mb-6 inline-block"><CreditCard size={48} className="text-white" /></div>
-            <h1 className="cdv-comic-title text-4xl text-slate-900 dark:text-white mb-3 tracking-tight">CardsDeVen</h1>
-            <p className="text-slate-600 dark:text-slate-400 max-w-sm text-lg font-medium">Smart logic for Israeli gift cards.</p>
-          </div>
-          <div className="w-full max-w-md cdv-comic-panel p-8 rounded-[2rem] animate-in slide-in-from-bottom-8 fade-in duration-700 delay-150">
-            <h2 className="cdv-comic-title text-2xl text-slate-900 dark:text-white mb-6 text-center">{isLoginMode ? 'Welcome Back' : 'Create Account'}</h2>
-            {authError && <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-2xl mb-6 text-sm text-center border border-red-100 dark:border-red-800/50">{authError}</div>}
-            <form onSubmit={handleAuthSubmit} className="space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Email Address</label>
-                <div className="relative group">
-                  <Mail className="absolute left-4 top-3.5 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all" placeholder="you@example.com" />
+        <div className="cdv-shell flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12">
+          <div className="w-full max-w-sm animate-in slide-in-from-bottom-3 fade-in duration-500">
+            <div className="mb-9">
+              <span className="mb-6 grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--cdv-surface-inverse)] text-[var(--cdv-on-inverse)]" aria-hidden>
+                <CreditCard size={21} />
+              </span>
+              <h1 className="cdv-display text-[2rem] leading-[1.1]" translate="no">CardsDeVen</h1>
+              <p className="mt-2.5 text-[var(--cdv-mute)]">
+                Know which gift card to use, before you reach the counter.
+              </p>
+            </div>
+
+            <div className="cdv-panel p-7">
+              <h2 className="cdv-display text-lg">{isLoginMode ? 'Sign in' : 'Create your account'}</h2>
+              <p className="mt-1 text-sm text-[var(--cdv-mute)]">
+                {isLoginMode ? 'Your wallet and plans sync across devices.' : 'Free, and your card balances stay private to you.'}
+              </p>
+
+              {authError && (
+                <p
+                  role="alert"
+                  className="mt-5 flex items-start gap-2 rounded-[var(--cdv-r-md)] px-3.5 py-3 text-sm"
+                  style={{ background: 'var(--cdv-danger-soft)', color: 'var(--cdv-danger)' }}
+                >
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden />
+                  <span>{authError}</span>
+                </p>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className="mt-6 space-y-4">
+                <div>
+                  <label htmlFor="cdv-email" className="cdv-label">Email</label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                    <input
+                      id="cdv-email"
+                      name="email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      inputMode="email"
+                      spellCheck={false}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="cdv-input !pl-10"
+                      placeholder="you@example.com"
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Password</label>
-                <div className="relative group">
-                  <Lock className="absolute left-4 top-3.5 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
-                  <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all" placeholder="••••••••" />
+                <div>
+                  <label htmlFor="cdv-password" className="cdv-label">Password</label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                    <input
+                      id="cdv-password"
+                      name="password"
+                      type="password"
+                      required
+                      minLength={6}
+                      autoComplete={isLoginMode ? 'current-password' : 'new-password'}
+                      spellCheck={false}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="cdv-input !pl-10"
+                      placeholder="At least 6 characters"
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
-              </div>
-              <button type="submit" disabled={isProcessingAuth} className="w-full bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg hover:shadow-xl disabled:opacity-70 mt-8 flex justify-center items-center active:scale-[0.98]">
-                {isProcessingAuth ? <Loader2 className="animate-spin" size={20} /> : (isLoginMode ? 'Sign In' : 'Create Account')}
-              </button>
-            </form>
-            <div className="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">
-              <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }} className="text-blue-600 dark:text-blue-400 font-bold hover:underline">{isLoginMode ? 'Switch to Sign Up' : 'Switch to Sign In'}</button>
+                <button type="submit" disabled={isProcessingAuth} className="cdv-btn cdv-btn--primary !mt-6 w-full !py-3">
+                  {isProcessingAuth
+                    ? <><Loader2 className="animate-spin" size={17} aria-hidden /> {isLoginMode ? 'Signing in…' : 'Creating account…'}</>
+                    : (isLoginMode ? 'Sign In' : 'Create Account')}
+                </button>
+              </form>
+
+              <p className="mt-6 border-t border-[var(--cdv-hairline)] pt-5 text-center text-sm text-[var(--cdv-mute)]">
+                {isLoginMode ? 'No account yet? ' : 'Already have an account? '}
+                <button
+                  type="button"
+                  onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }}
+                  className="rounded font-semibold text-[var(--cdv-accent)] hover:underline"
+                >
+                  {isLoginMode ? 'Create one' : 'Sign in'}
+                </button>
+              </p>
             </div>
           </div>
         </div>
@@ -1761,106 +1931,156 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   return (
     <div
-      className={`${isDarkMode ? 'dark' : ''} font-sans transition-colors duration-300 ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-14'}`}
+      className={`${isDarkMode ? 'dark' : ''} font-sans ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-20'}`}
     >
       <div
-        className={`cdv-comic-bg text-slate-800 dark:text-slate-200 transition-colors duration-300 relative ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-screen'}`}
+        className={`cdv-shell relative ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-screen'}`}
       >
-        {toast.visible && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300 max-w-[calc(100vw-2rem)]">
-            <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'} px-6 py-3 rounded-full shadow-2xl font-medium flex items-center gap-2`}>
-              {toast.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-400 dark:text-emerald-500" /> : <AlertCircle size={18} className="text-white" />}
-              {toast.message}
-            </div>
-          </div>
-        )}
+        <a href="#cdv-main" className="cdv-skip-link">Skip to content</a>
 
-        <div className="fixed top-3 right-3 z-50 flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2 rounded-2xl border-[3px] border-slate-900 dark:border-slate-600 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2 py-2 shadow-[4px_4px_0_#6366f1] dark:shadow-[4px_4px_0_#4f46e5]">
-            <button type="button" onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300" aria-label={isDarkMode ? 'Light mode' : 'Dark mode'}>{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-            <button type="button" onClick={handleSignOut} className="p-2.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors" aria-label="Sign out"><LogOut size={18} /></button>
-          </div>
-          <p className="text-[10px] sm:text-xs font-medium text-slate-600 dark:text-slate-400 max-w-[12rem] truncate text-right px-1" title={user.email}>{user.email}</p>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-[calc(100vw-2rem)]" role="status" aria-live="polite">
+          {toast.visible && (
+            <div
+              className={`flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold shadow-[var(--cdv-shadow-float)] animate-in slide-in-from-top-4 fade-in duration-300 ${toast.type === 'error' ? 'bg-[var(--cdv-danger)] text-white' : 'bg-[var(--cdv-surface-inverse)] text-[var(--cdv-on-inverse)]'}`}
+            >
+              {toast.type === 'success'
+                ? <CheckCircle2 size={17} className="text-[var(--cdv-positive)] shrink-0" aria-hidden />
+                : <AlertCircle size={17} className="shrink-0" aria-hidden />}
+              <span className="min-w-0">{toast.message}</span>
+            </div>
+          )}
         </div>
 
+        {/*
+          A real sticky bar. The previous floating panel sat on top of each tab's
+          primary action, which made Add Card and Plan Purchase unclickable.
+        */}
+        <header className="cdv-topbar sticky top-0 z-50">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-14">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] bg-[var(--cdv-surface-inverse)] text-[var(--cdv-on-inverse)]" aria-hidden>
+                <CreditCard size={15} />
+              </span>
+              <span className="cdv-display text-base tracking-tight truncate" translate="no">CardsDeVen</span>
+            </div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="hidden sm:block text-xs text-[var(--cdv-faint)] max-w-[16rem] truncate" title={user.email}>{user.email}</p>
+              <button type="button" onClick={() => setIsDarkMode(!isDarkMode)} className="cdv-icon-btn" aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+                {isDarkMode ? <Sun size={17} aria-hidden /> : <Moon size={17} aria-hidden />}
+              </button>
+              <button type="button" onClick={handleSignOut} className="cdv-icon-btn cdv-icon-btn--danger" aria-label="Sign out">
+                <LogOut size={17} aria-hidden />
+              </button>
+            </div>
+          </div>
+        </header>
+
         <main
-          className={`max-w-6xl mx-auto p-4 sm:p-6 pt-4 sm:pt-6 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 basis-0 flex-col overflow-hidden pb-16' : ''}`}
+          id="cdv-main"
+          className={`mx-auto w-full max-w-6xl px-4 pt-8 pb-24 sm:px-6 sm:pt-10 ${activeTab === 'ai' ? 'flex min-h-0 flex-1 basis-0 flex-col overflow-hidden' : ''}`}
         >
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
               {expiringAlerts.length > 0 && (
-                <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-[2rem] p-6 border-[3px] border-slate-900 dark:border-slate-800 shadow-[8px_8px_0_#431407] text-white flex flex-col sm:flex-row items-center gap-4 sm:justify-between animate-in zoom-in-95">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-white/20 p-3 rounded-full border-2 border-white/30"><Clock size={28} /></div>
-                    <div><h3 className="cdv-comic-title text-lg">Use It Or Lose It</h3><p className="text-white/85 text-sm font-medium">{expiringAlerts.length} card(s) expiring within 30 days!</p></div>
+                <section aria-labelledby="cdv-expiring-heading" className="cdv-panel overflow-hidden" style={{ borderColor: 'var(--cdv-warning-soft)' }}>
+                  <div className="flex items-center gap-2.5 border-b border-[var(--cdv-hairline)] bg-[var(--cdv-warning-soft)] px-5 py-3">
+                    <Clock size={15} className="text-[var(--cdv-warning)] shrink-0" aria-hidden />
+                    <h3 id="cdv-expiring-heading" className="text-sm font-semibold text-[var(--cdv-warning)]">
+                      {expiringAlerts.length === 1 ? '1 card expires' : `${expiringAlerts.length} cards expire`} within 30 days
+                    </h3>
                   </div>
-                  <div className="w-full sm:w-auto space-y-2">
+                  <ul className="cdv-divide">
                     {expiringAlerts.map((card) => (
-                      <div key={card.id} className="bg-black/20 px-4 py-2 rounded-xl flex justify-between items-center gap-6 backdrop-blur-md">
-                        <span className="font-bold">{card.name}</span>
-                        <div className="text-right"><div className="font-black">₪{card.remaining.toLocaleString()}</div><div className="text-[10px] uppercase tracking-wider text-orange-200">In {getDaysUntilExpiry(card.expiryDate)} Days</div></div>
-                      </div>
+                      <li key={card.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                        <span className="font-medium text-[var(--cdv-ink)] truncate min-w-0">{card.name}</span>
+                        <span className="flex shrink-0 items-baseline gap-3">
+                          <Money value={card.remaining} className="font-semibold text-[var(--cdv-ink)]" />
+                          <span className="cdv-badge cdv-badge--warning">{getDaysUntilExpiry(card.expiryDate)} days left</span>
+                        </span>
+                      </li>
                     ))}
-                  </div>
-                </div>
+                  </ul>
+                </section>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-8 rounded-[2rem] border-[3px] border-slate-900 dark:border-slate-600 shadow-[8px_8px_0_#6366f1] relative overflow-hidden group hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[6px_6px_0_#6366f1] transition-all">
-                  <div className="relative z-10"><div className="text-slate-300 text-sm font-bold mb-2 uppercase tracking-widest font-mono">Total Portfolio</div><div className="cdv-comic-title text-5xl mb-1">₪{totalInitialBalance.toLocaleString()}</div><div className="text-slate-400 text-sm">Initial setup across {cards.length} cards</div></div>
-                  <div className="absolute -right-8 -bottom-8 bg-white/5 p-8 rounded-full group-hover:scale-110 transition-transform duration-500"><CreditCard size={100} className="text-white/10" /></div>
+              <section aria-label="Portfolio summary" className="cdv-band-inverse overflow-hidden">
+                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[var(--cdv-band-divider)]">
+                  <div className="p-7 sm:p-9">
+                    <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Total portfolio</p>
+                    <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-on-band)]">{formatShekels(totalInitialBalance)}</p>
+                    <p className="mt-2 text-sm text-[var(--cdv-on-band-mute)]">
+                      Loaded across {cards.length} {cards.length === 1 ? 'card' : 'cards'}
+                    </p>
+                  </div>
+                  <div className="p-7 sm:p-9">
+                    <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Still available</p>
+                    <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-positive)]">{formatShekels(totalRemainingBalance)}</p>
+                    <p className="mt-2 text-sm text-[var(--cdv-on-band-mute)]">
+                      After <span className="cdv-amount">{formatShekels(totalPlannedExpenses)}</span> planned and spent
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white p-8 rounded-[2rem] border-[3px] border-emerald-950 shadow-[8px_8px_0_#065f46] relative overflow-hidden group hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[6px_6px_0_#065f46] transition-all">
-                  <div className="relative z-10"><div className="text-emerald-100 text-sm font-bold mb-2 uppercase tracking-widest font-mono">Available Power</div><div className="cdv-comic-title text-5xl mb-1">₪{totalRemainingBalance.toLocaleString()}</div><div className="text-emerald-100 text-sm">After ₪{totalPlannedExpenses.toLocaleString()} total expenses</div></div>
-                  <div className="absolute -right-8 -bottom-8 bg-black/5 p-8 rounded-full group-hover:scale-110 transition-transform duration-500"><Receipt size={100} className="text-black/10" /></div>
-                </div>
-              </div>
+              </section>
 
-              <div>
-                <h2 className="cdv-comic-title text-2xl text-slate-900 dark:text-white mb-6">Budget by Category</h2>
+              <section aria-labelledby="cdv-budget-heading">
+                <div className="mb-5 flex items-baseline justify-between gap-4">
+                  <h2 id="cdv-budget-heading" className="cdv-display text-2xl">Budget by category</h2>
+                  {fundsByCategory.length > 0 && (
+                    <p className="cdv-eyebrow shrink-0">{fundsByCategory.length} categories</p>
+                  )}
+                </div>
                 {fundsByCategory.length === 0 ? (
-                  <div className="cdv-comic-panel cdv-comic-panel--dashed text-center p-12 rounded-[2rem]"><PieChart size={48} className="mx-auto mb-4 text-indigo-400 dark:text-indigo-500" /><p className="text-slate-600 dark:text-slate-400 font-medium">Add cards to populate your category breakdown.</p></div>
+                  <div className="cdv-panel--empty px-6 py-14 text-center">
+                    <PieChart size={28} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
+                    <p className="font-medium text-[var(--cdv-ink)]">No categories yet</p>
+                    <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--cdv-mute)]">Add a card to your wallet and its spending categories appear here.</p>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {fundsByCategory.map(([category, data]) => (
-                      <div key={category} className="cdv-comic-panel p-6 rounded-[1.5rem] hover:-translate-y-1 transition-transform group">
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 font-mono text-sm"><span>{CATEGORY_ICONS[category]}</span><span className="leading-tight">{category}</span></div>
-                          <div className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 px-3 py-1 border-2 border-emerald-700/30 text-xs font-extrabold uppercase">Available</div>
+                      <article key={category} className="cdv-panel cdv-panel--interactive cdv-cat-card flex flex-col p-5" style={categoryHueStyle(category)}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="cdv-cat-mark" aria-hidden>{CATEGORY_ICONS[category]}</span>
+                          <h3 className="text-sm font-semibold text-[var(--cdv-body)] leading-tight min-w-0 break-words">{category}</h3>
                         </div>
-                        <div className="cdv-comic-title text-3xl text-slate-900 dark:text-white mb-3">₪{data.total.toLocaleString()}</div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed"><span className="font-bold">Sources:</span> {data.sources.join(', ')}</div>
-                      </div>
+                        <p className="cdv-amount mt-4 text-2xl font-semibold text-[var(--cdv-ink)]">{formatShekels(data.total)}</p>
+                        <p className="mt-3 border-t border-[var(--cdv-hairline)] pt-3 text-xs leading-relaxed text-[var(--cdv-mute)] line-clamp-2" title={data.sources.join(', ')}>
+                          {data.sources.join(' · ')}
+                        </p>
+                      </article>
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
             </div>
           )}
 
           {/* Wallets */}
           {activeTab === 'wallets' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
-                <div>
-                  <h2 className="cdv-comic-title text-3xl text-slate-900 dark:text-white tracking-tight">Digital Wallet</h2>
-                  <p className="text-slate-600 dark:text-slate-400 mt-1 font-medium">Manage your active gift cards and budgets.</p>
+                <div className="min-w-0">
+                  <h2 className="cdv-display text-3xl">Wallet</h2>
+                  <p className="mt-1.5 text-[var(--cdv-mute)]">Your active gift cards, grants and benefit budgets.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => { resetCardForm(); setShowCardForm(true); }}
-                  className="border-[3px] border-slate-900 dark:border-slate-500 bg-indigo-600 text-white px-5 py-3 font-extrabold flex items-center justify-center gap-2 shadow-[6px_6px_0_#312e81] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[4px_4px_0_#312e81] transition-all font-mono text-sm uppercase tracking-wide"
+                  className="cdv-btn cdv-btn--primary shrink-0"
                 >
-                  <Plus size={20} /> Add Card
+                  <Plus size={17} aria-hidden /> Add Card
                 </button>
               </div>
 
               {cards.length === 0 ? (
-                <div className="cdv-comic-panel cdv-comic-panel--dashed text-center p-16 rounded-[2rem]">
-                  <CreditCard size={64} className="mx-auto mb-6 text-indigo-500 dark:text-indigo-400" />
-                  <h3 className="cdv-comic-title text-xl text-slate-900 dark:text-white mb-2">Your wallet is empty</h3>
-                  <p className="text-slate-600 dark:text-slate-400 max-w-sm mx-auto">Add your first funding source or gift card.</p>
+                <div className="cdv-panel--empty px-6 py-16 text-center">
+                  <CreditCard size={30} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
+                  <h3 className="cdv-display text-lg">Your wallet is empty</h3>
+                  <p className="mx-auto mt-2 max-w-sm text-sm text-[var(--cdv-mute)]">Add a gift card, Cibus balance or benefit grant and CardsDeVen starts matching it to deals.</p>
+                  <button type="button" onClick={() => { resetCardForm(); setShowCardForm(true); }} className="cdv-btn cdv-btn--primary mt-6">
+                    <Plus size={17} aria-hidden /> Add your first card
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -1872,11 +2092,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
                     const cardBalanceUrl = normalizeCardLink(card.cardLink);
                     return (
-                      <div
+                      <article
                         key={card.id}
-                        className={`cdv-comic-panel rounded-[2rem] p-6 flex flex-col gap-6 ${isExpiringSoon ? 'ring-4 ring-orange-500 ring-offset-2 dark:ring-offset-[#020617]' : ''}`}
+                        className="cdv-panel flex flex-col gap-6 p-6"
+                        style={isExpiringSoon ? { borderColor: 'var(--cdv-warning)' } : undefined}
                       >
-                        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-start">
+                        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                           <WalletCreditPlastic
                             balanceRemaining={card.remaining}
                             balanceLimit={parseFloat(card.balance)}
@@ -1886,55 +2107,67 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             expiryDate={card.expiryDate}
                             isExpiringSoon={isExpiringSoon}
                           />
-                          <div className="flex-1 min-w-0 flex flex-col gap-4">
-                            <div className="flex flex-col gap-3">
-                              <h3 className="cdv-comic-title text-xl sm:text-2xl text-slate-900 dark:text-white tracking-tight leading-snug break-words pr-1">{card.name}</h3>
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div className={`flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider font-mono min-w-0 ${isExpiringSoon ? 'text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400'}`}>
-                                  <ruleData.icon size={14} className="shrink-0" />
-                                  <span>{ruleData.label}</span>
-                                  {card.ruleType === 'expires' && card.expiryDate && <span>• {new Date(card.expiryDate).toLocaleDateString()}</span>}
-                                  {isExpiringSoon && <span className="text-orange-500">• EXPIRING</span>}
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0 border-[3px] border-slate-900 dark:border-slate-600 shadow-[3px_3px_0_#6366f1] bg-slate-100 dark:bg-slate-800/80 p-1 self-start sm:self-center">
-                                  <button type="button" title="Edit card" onClick={() => startEditCard(card)} className="p-2.5 hover:bg-indigo-100 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-900 dark:text-slate-100"><Edit2 size={17} /></button>
-                                  <span className="w-px h-5 bg-slate-300 dark:bg-slate-600" aria-hidden />
-                                  <button type="button" title="Delete card" onClick={() => { if (window.confirm('Delete this card?')) deleteCard(card.id); }} className="p-2.5 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-md transition-colors text-red-600 dark:text-red-400"><Trash2 size={17} /></button>
+                          <div className="flex min-h-full flex-1 min-w-0 flex-col gap-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h3 className="cdv-display text-xl leading-snug break-words">{card.name}</h3>
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <span className={`cdv-badge ${isExpiringSoon ? 'cdv-badge--warning' : 'cdv-badge--neutral'}`}>
+                                    <ruleData.icon size={11} className="shrink-0" aria-hidden />
+                                    {card.ruleType === 'expires' && card.expiryDate
+                                      ? (isExpiringSoon
+                                        ? `${getDaysUntilExpiry(card.expiryDate)} days left`
+                                        : `Expires ${formatDate(card.expiryDate)}`)
+                                      : ruleData.label}
+                                  </span>
+                                  <span className="cdv-badge cdv-badge--neutral">{progData.name}</span>
                                 </div>
                               </div>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                <button type="button" onClick={() => startEditCard(card)} className="cdv-icon-btn" aria-label={`Edit ${card.name}`}><Edit2 size={16} aria-hidden /></button>
+                                <button type="button" onClick={() => requestDeleteCard(card)} className="cdv-icon-btn cdv-icon-btn--danger" aria-label={`Delete ${card.name}`}><Trash2 size={16} aria-hidden /></button>
+                              </div>
                             </div>
-                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 border-2 border-slate-900/10 dark:border-slate-700 overflow-hidden">
-                              <div className="bg-gradient-to-r from-indigo-500 to-violet-500 h-full transition-all duration-1000 ease-out" style={{ width: `${percentRemaining}%` }} />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => startQuickExpense(card.id)}
-                              className="w-full flex items-center justify-center gap-2 py-3 border-[3px] border-slate-900 dark:border-slate-600 bg-indigo-600 text-white font-extrabold text-sm uppercase tracking-wide shadow-[4px_4px_0_#312e81] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0_#312e81] transition-all font-mono"
-                            >
-                              <Zap size={18} className="fill-current shrink-0" />
-                              <span>Quick spend</span>
-                            </button>
-                            {cardBalanceUrl ? (
-                              <a
-                                href={cardBalanceUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="w-full flex items-center justify-center gap-2 py-3 border-[3px] border-slate-900 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-extrabold text-sm shadow-[4px_4px_0_#6366f1] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0_#6366f1] transition-all"
+
+                            <div>
+                              <div className="mb-2 flex items-baseline justify-between gap-3">
+                                <Money value={card.remaining} className="text-lg font-semibold text-[var(--cdv-ink)]" />
+                                <span className="cdv-amount text-xs text-[var(--cdv-faint)]">of {formatShekels(parseFloat(card.balance))}</span>
+                              </div>
+                              <div
+                                className="cdv-meter"
+                                role="progressbar"
+                                aria-label={`${card.name} balance remaining`}
+                                aria-valuenow={Math.round(percentRemaining)}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
                               >
-                                <ExternalLink size={18} className="shrink-0" />
-                                <span>לינק לכרטיס</span>
-                              </a>
-                            ) : null}
+                                <div className={`cdv-meter__fill ${isExpiringSoon ? 'cdv-meter__fill--warning' : ''}`} style={{ width: `${percentRemaining}%` }} />
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => startQuickExpense(card.id)} className="cdv-btn cdv-btn--primary">
+                                <Zap size={16} className="shrink-0" aria-hidden />
+                                Quick spend
+                              </button>
+                              {cardBalanceUrl ? (
+                                <a href={cardBalanceUrl} target="_blank" rel="noopener noreferrer" className="cdv-btn cdv-btn--outline">
+                                  <ExternalLink size={15} className="shrink-0" aria-hidden />
+                                  Check balance
+                                </a>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 pt-1 border-t-[3px] border-slate-200 dark:border-slate-700">
+                        <div className="flex flex-wrap gap-1.5 border-t border-[var(--cdv-hairline)] pt-4">
                           {card.derivedCats.map((cat) => (
-                            <span key={cat} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-[2px] border-slate-900/15 dark:border-slate-600 px-3 py-1.5 text-xs font-bold shadow-[2px_2px_0_#6366f1] flex items-center gap-1.5 font-mono">
-                              {CATEGORY_ICONS[cat]} {cat}
+                            <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
+                              <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
                             </span>
                           ))}
                         </div>
-                      </div>
+                      </article>
                     );
                   })}
                 </div>
@@ -1944,245 +2177,461 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
           {/* Planner */}
           {activeTab === 'planner' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex justify-between items-end">
-                <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Expense Planner</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Plan and verify purchases against your wallet rules.</p></div>
-                <button onClick={() => { resetExpenseForm(); setShowExpenseForm(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg hover:shadow-xl"><Plus size={20} /> Plan Purchase</button>
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+                <div className="min-w-0">
+                  <h2 className="cdv-display text-3xl">Planner</h2>
+                  <p className="mt-1.5 text-[var(--cdv-mute)]">Reserve funds against a card before you buy.</p>
+                </div>
+                <button type="button" onClick={() => { resetExpenseForm(); setShowExpenseForm(true); }} className="cdv-btn cdv-btn--primary shrink-0">
+                  <Plus size={17} aria-hidden /> Plan Purchase
+                </button>
               </div>
-              <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-center"><h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">Ledger</h3><span className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-1.5 rounded-full text-sm font-bold">Total: ₪{totalPlannedExpenses.toLocaleString()}</span></div>
+
+              <section aria-labelledby="cdv-ledger-heading" className="cdv-panel overflow-hidden">
+                <div className="flex items-center justify-between gap-4 border-b border-[var(--cdv-hairline)] px-5 py-4">
+                  <h3 id="cdv-ledger-heading" className="font-semibold text-[var(--cdv-ink)]">Ledger</h3>
+                  <p className="flex items-baseline gap-2">
+                    <span className="cdv-eyebrow">Reserved</span>
+                    <Money value={totalPlannedExpenses} className="font-semibold text-[var(--cdv-ink)]" />
+                  </p>
+                </div>
                 {expenses.length === 0 ? (
-                  <div className="p-16 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center"><Receipt size={48} className="text-slate-200 dark:text-slate-800 mb-4" /><p className="font-medium text-lg">No purchases planned yet.</p><p className="text-sm">Plan a purchase to reserve funds.</p></div>
+                  <div className="px-6 py-14 text-center">
+                    <Receipt size={28} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
+                    <p className="font-medium text-[var(--cdv-ink)]">Nothing planned yet</p>
+                    <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--cdv-mute)]">Plan a purchase and CardsDeVen reserves the funds against the right card.</p>
+                  </div>
                 ) : (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <ul className="cdv-divide">
                     {sortedExpenses.map((expense) => {
                       const sourceCard = cards.find((c) => c.id === expense.cardId);
-                      const progColor = sourceCard ? (PROGRAMS[sourceCard.programId || 'CUSTOM'] || PROGRAMS.CUSTOM).color : 'bg-slate-200';
+                      const scheduled = expense.scheduledFor ? new Date(expense.scheduledFor) : null;
+                      const isFuture = scheduled ? scheduled > new Date() : false;
+                      const merchants = expenseMerchantsForDisplay(expense);
+                      const categories = expenseCategoriesForDisplay(expense);
                       return (
-                        <div key={expense.id} className={`p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors group ${expense.isCompleted ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
-                          <div className="flex items-center gap-4 sm:gap-5">
-                            <button onClick={() => toggleExpenseCompletion(expense)} className={`w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded-2xl flex flex-col items-center justify-center transition-all shadow-sm ${expense.isCompleted ? 'bg-emerald-500 text-white' : 'bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 hover:border-emerald-400 hover:text-emerald-500'}`}>{expense.isCompleted ? <CheckSquare size={20} className="sm:w-6 sm:h-6" /> : <Square size={20} className="sm:w-6 sm:h-6" />}<span className="text-[8px] sm:text-[9px] font-bold uppercase mt-0.5">{expense.isCompleted ? 'Paid' : 'Plan'}</span></button>
-                            <div>
-                              <div className={`font-bold text-base sm:text-lg mb-1 flex flex-wrap items-center gap-2 ${expense.isCompleted ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                        <li key={expense.id} className="group flex items-center gap-4 px-5 py-4">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpenseCompletion(expense)}
+                            className="cdv-icon-btn shrink-0"
+                            style={expense.isCompleted ? { color: 'var(--cdv-positive)', background: 'var(--cdv-positive-soft)' } : undefined}
+                            aria-pressed={!!expense.isCompleted}
+                            aria-label={expense.isCompleted ? `Mark ${expense.name} as not yet spent` : `Mark ${expense.name} as spent`}
+                          >
+                            {expense.isCompleted ? <CheckSquare size={17} aria-hidden /> : <Square size={17} aria-hidden />}
+                          </button>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className={`font-semibold min-w-0 break-words ${expense.isCompleted ? 'text-[var(--cdv-mute)] line-through decoration-[var(--cdv-hairline-heavy)]' : 'text-[var(--cdv-ink)]'}`}>
                                 {expense.name}
-                                {expense.scheduledFor && (() => {
-                                  const d = new Date(expense.scheduledFor);
-                                  const isFuture = d > new Date();
-                                  return (
-                                    <span className={`text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${isFuture ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
-                                      {isFuture ? 'Planned ' : ''}{d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                    </span>
-                                  );
-                                })()}
-                                {expenseMerchantsForDisplay(expense).map((m) => {
-                                  const mc = KNOWN_MERCHANTS[m]?.cat || expenseCategoriesForDisplay(expense)[0] || expense.category;
-                                  return (
-                                    <span key={m} className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] sm:text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <MerchantIcon merchantName={m} category={mc} className="w-4 h-4 rounded-sm border-0" />
-                                      {m.split('(')[0].trim()}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 text-xs">
-                                <span className="font-medium text-slate-500">{expenseCategoriesForDisplay(expense).map((cat) => `${CATEGORY_ICONS[cat]} ${cat}`).join(' · ') || '—'}</span>
-                                <span className="text-slate-300 dark:text-slate-600">•</span>
-                                <span className="font-bold flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${progColor}`}></span>{sourceCard?.name || 'Deleted Card'}</span>
-                              </div>
+                              </p>
+                              {expense.isCompleted && <span className="cdv-badge cdv-badge--positive">Spent</span>}
+                              {scheduled && (
+                                <span className={`cdv-badge ${isFuture ? 'cdv-badge--accent' : 'cdv-badge--neutral'}`}>
+                                  {formatDate(scheduled)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--cdv-mute)]">
+                              {categories.length > 0
+                                ? categories.map((cat) => (
+                                  <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
+                                    <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
+                                  </span>
+                                ))
+                                : <span>—</span>}
+                              <span aria-hidden className="text-[var(--cdv-faint)]">•</span>
+                              <span className="min-w-0 truncate font-medium text-[var(--cdv-body)]">{sourceCard?.name || 'Deleted card'}</span>
+                              {merchants.map((m) => (
+                                <span key={m} className="flex items-center gap-1 min-w-0">
+                                  <MerchantIcon merchantName={m} category={KNOWN_MERCHANTS[m]?.cat || categories[0] || expense.category} className="w-4 h-4 rounded-[4px] border-0" />
+                                  <span className="truncate">{m.split('(')[0].trim()}</span>
+                                </span>
+                              ))}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-16 sm:pl-0">
-                            <div className={`font-black text-xl sm:text-2xl ${expense.isCompleted ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400'}`}>₪{parseFloat(expense.amount).toLocaleString()}</div>
-                            <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex gap-1 transition-opacity">
-                              <button onClick={() => startEditExpense(expense)} className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-xl transition-all"><Edit2 size={18} /></button>
-                              <button onClick={() => deleteExpense(expense.id)} className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 rounded-xl transition-all"><Trash2 size={18} /></button>
+
+                          <div className="flex shrink-0 items-center gap-3">
+                            <Money value={parseFloat(expense.amount)} className={`text-base font-semibold ${expense.isCompleted ? 'text-[var(--cdv-positive)]' : 'text-[var(--cdv-ink)]'}`} />
+                            <div className="flex gap-0.5 transition-opacity duration-150 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                              <button type="button" onClick={() => startEditExpense(expense)} className="cdv-icon-btn" aria-label={`Edit ${expense.name}`}><Edit2 size={16} aria-hidden /></button>
+                              <button type="button" onClick={() => deleteExpense(expense.id)} className="cdv-icon-btn cdv-icon-btn--danger" aria-label={`Delete ${expense.name}`}><Trash2 size={16} aria-hidden /></button>
                             </div>
                           </div>
-                        </div>
+                        </li>
                       );
                     })}
-                  </div>
+                  </ul>
                 )}
-              </div>
+              </section>
             </div>
           )}
 
           {/* Insights */}
           {activeTab === 'insights' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Smart Merchant Search</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Find out exactly which cards & discounts to use at the checkout counter.</p></div>
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <div className="min-w-0">
+                <h2 className="cdv-display text-3xl">Checkout check</h2>
+                <p className="mt-1.5 text-[var(--cdv-mute)]">Type where you&rsquo;re paying and see which card works, plus any club deal.</p>
+              </div>
 
-              {cardBalances.length > 0 && uniqueCoverageCategories.length > 0 && (
-                <div className="rounded-[2rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-none overflow-hidden">
-                  <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:from-slate-800/50 dark:to-emerald-950/20">
-                    <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Broad Category Coverage</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">See which wallet cards support each shopping category. On small screens, categories stack; on larger screens, use the matrix with horizontal scroll if you have many cards.</p>
-                  </div>
-                  <div className="p-4 sm:p-6">
-                    <div className="sm:hidden space-y-4">
-                      {uniqueCoverageCategories.map((category) => {
-                        const supporting = cardBalances.filter((c) => (c.derivedCats || []).includes(category));
-                        return (
-                          <div key={category} className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
-                            <div className="flex items-center gap-2 mb-3 font-bold text-slate-800 dark:text-slate-100">
-                              <span className="text-xl" aria-hidden>{CATEGORY_ICONS[category] || '🏷️'}</span>
-                              <span className="leading-tight text-sm sm:text-base">{category}</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {supporting.length === 0 ? (
-                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-700/50 px-2.5 py-1 rounded-full">No coverage</span>
-                              ) : (
-                                supporting.map((c) => (
-                                  <span key={c.id} className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 border border-emerald-200/80 dark:border-emerald-800/60 px-2.5 py-1 rounded-full">{c.name}</span>
-                                ))
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="hidden sm:block overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
-                      <table className="min-w-[800px] w-full border-collapse text-sm">
-                        <thead>
-                          <tr className="bg-slate-100 dark:bg-slate-800/80">
-                            <th scope="col" className="sticky left-0 z-30 px-4 py-3 text-left font-bold text-slate-700 dark:text-slate-200 border-b border-r border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 min-w-[200px] shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.4)]">Coverage Areas</th>
-                            {cardBalances.map((card) => {
-                              const prog = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
-                              return (
-                                <th key={card.id} scope="col" className="px-3 py-3 text-center font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 align-bottom min-w-[120px]">
-                                  <div className="flex flex-col items-center gap-1.5">
-                                    <span className={`h-3 w-3 rounded-full shrink-0 ring-2 ring-white/30 shadow-sm ${card.color || GRADIENTS[0]}`} title="" aria-hidden />
-                                    <span className="text-xs sm:text-sm leading-tight">{card.name}</span>
-                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 max-w-[140px] truncate">{prog.name}</span>
-                                  </div>
-                                </th>
-                              );
-                            })}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {uniqueCoverageCategories.map((category) => (
-                            <tr key={category} className="group border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50/90 dark:hover:bg-slate-800/40 transition-colors">
-                              <th scope="row" className="sticky left-0 z-20 px-4 py-3 text-left font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-100 dark:border-slate-800 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.35)]">
-                                <span className="inline-flex items-center gap-2">
-                                  <span className="text-lg" aria-hidden>{CATEGORY_ICONS[category] || '🏷️'}</span>
-                                  <span className="leading-tight">{category}</span>
-                                </span>
-                              </th>
-                              {cardBalances.map((card) => (
-                                <td key={`${category}-${card.id}`} className="p-2 text-center align-middle border-l border-slate-50 dark:border-slate-800/50">
-                                  {(card.derivedCats || []).includes(category) ? (
-                                    <div className="flex justify-center"><CheckCircle2 className="text-emerald-500 dark:text-emerald-400" size={22} strokeWidth={2.25} aria-label="Covered" /></div>
-                                  ) : (
-                                    <div className="flex justify-center"><span className="block w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-600" aria-hidden /></div>
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+              {/* Search leads — it is the reason to open this tab. */}
+              <section aria-labelledby="cdv-search-heading" className="cdv-band-inverse p-6 sm:p-8">
+                <h3 id="cdv-search-heading" className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Where are you paying?</h3>
+                <div className="relative mt-3">
+                  <Search size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--cdv-on-band-mute)]" aria-hidden />
+                  <input
+                    type="search"
+                    name="merchant"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={insightSearch}
+                    onChange={(e) => setInsightSearch(e.target.value)}
+                    placeholder="Zara, Domino&rsquo;s, Cinema City…"
+                    aria-label="Search for a merchant"
+                    className="w-full rounded-full border border-white/20 bg-white/10 py-3.5 pl-12 pr-4 text-base text-[var(--cdv-on-band)] placeholder:text-[var(--cdv-on-band-mute)] outline-none transition-colors duration-150 focus:border-white/50 focus:bg-white/15"
+                  />
                 </div>
-              )}
 
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[2rem] p-6 sm:p-8 shadow-xl text-white">
-                <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Search size={24} /> Where are you paying?</h3>
-                <input type="text" value={insightSearch} onChange={(e) => setInsightSearch(e.target.value)} placeholder="e.g. Zara, Pizza, Cinema, ASOS..." className="w-full pl-5 pr-12 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/60 focus:ring-4 focus:ring-white/30 outline-none font-medium text-lg transition-all" />
                 {insightSearch && (
-                  <div className="mt-6 space-y-4">
+                  <div className="mt-6 space-y-3" aria-live="polite">
                     {(() => {
                       const matches = getSmartMatches(insightSearch, 5);
-                      if (matches.length === 0) return <div className="text-white/80 font-medium bg-white/10 p-4 rounded-2xl border border-white/20">Merchant not found in official database. Generic category rules will apply.</div>;
+                      if (matches.length === 0) {
+                        return (
+                          <p className="rounded-[var(--cdv-r-md)] border border-white/15 bg-white/5 px-4 py-3.5 text-sm text-[var(--cdv-on-band-mute)]">
+                            No match in the merchant database. Your general category rules still apply — check the coverage table below.
+                          </p>
+                        );
+                      }
                       return matches.map(([searchMatch, mData]) => {
                         const acceptedCards = sortedCardBalances.filter((c) => checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
                         const merchantDeals = discountsData.filter(
                           (d) => userClubs.includes(d.c) && dealMatchesInsightMerchant(d, searchMatch, insightSearch)
                         );
                         return (
-                          <div key={searchMatch} className="animate-in slide-in-from-bottom-2 fade-in bg-white/10 p-5 rounded-2xl border border-white/20 shadow-md">
-                            <div className="flex items-center gap-3 mb-4"><MerchantIcon merchantName={searchMatch} category={mData.cat} className="w-10 h-10 rounded-full" /><div><div className="text-base sm:text-lg font-bold text-white leading-tight">{searchMatch}</div><div className="text-[10px] sm:text-xs uppercase tracking-widest text-blue-200 mt-0.5">{CATEGORY_ICONS[mData.cat]} {mData.cat}</div></div></div>
-                            {acceptedCards.length > 0 ? (
-                              <div className="flex flex-wrap gap-2 sm:gap-3">
-                                {acceptedCards.map((c) => {
-                                  const isExpiringSoon = c.ruleType === 'expires' && getDaysUntilExpiry(c.expiryDate) <= 30;
-                                  return <div key={c.id} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold shadow-md text-sm ${isExpiringSoon ? 'bg-orange-100 text-orange-900 border-2 border-orange-500' : 'bg-white text-slate-900'}`}>{isExpiringSoon ? <Clock size={16} className="text-orange-600" /> : <CheckCircle2 size={16} className="text-emerald-500" />} <span className="truncate max-w-[100px] sm:max-w-none">{c.name}</span><span className={`${isExpiringSoon ? 'bg-orange-200 text-orange-900' : 'bg-emerald-100 text-emerald-800'} px-1.5 py-0.5 rounded text-xs ml-0.5`}>₪{c.remaining.toLocaleString()}</span></div>;
-                                })}
+                          <article key={searchMatch} className="animate-in slide-in-from-bottom-1 fade-in rounded-[var(--cdv-r-lg)] border border-white/15 bg-white/[0.07] p-5">
+                            <div className="flex items-center gap-3">
+                              <MerchantIcon merchantName={searchMatch} category={mData.cat} className="w-9 h-9 rounded-[10px]" />
+                              <div className="min-w-0">
+                                <h4 className="font-semibold leading-tight text-[var(--cdv-on-band)] break-words" dir="auto">{searchMatch}</h4>
+                                <p className="mt-1.5">
+                                  <span className="cdv-chip cdv-cat" style={categoryHueStyle(mData.cat)}>
+                                    <span aria-hidden>{CATEGORY_ICONS[mData.cat]}</span> {mData.cat}
+                                  </span>
+                                </p>
                               </div>
-                            ) : (
-                              <div className="bg-red-500/20 border border-red-500/50 text-white px-4 py-3 rounded-xl inline-flex items-start sm:items-center gap-2 font-medium text-sm sm:text-base"><AlertCircle size={18} className="shrink-0 mt-0.5 sm:mt-0" /><span>No active cards have funds for this merchant.</span></div>
-                            )}
+                            </div>
+
+                            <div className="mt-4">
+                              {acceptedCards.length > 0 ? (
+                                <ul className="flex flex-wrap gap-2">
+                                  {acceptedCards.map((c) => {
+                                    const isExpiringSoon = c.ruleType === 'expires' && getDaysUntilExpiry(c.expiryDate) <= 30;
+                                    return (
+                                      <li
+                                        key={c.id}
+                                        className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
+                                        style={isExpiringSoon
+                                          ? { background: 'var(--cdv-warning-soft)', borderColor: 'var(--cdv-warning)', color: 'var(--cdv-warning)' }
+                                          : { background: 'rgba(255,255,255,0.95)', borderColor: 'transparent', color: '#14171a' }}
+                                      >
+                                        {isExpiringSoon
+                                          ? <Clock size={14} className="shrink-0" aria-hidden />
+                                          : <CheckCircle2 size={14} className="shrink-0 text-[#12795e]" aria-hidden />}
+                                        <span className="truncate max-w-[12rem] font-medium">{c.name}</span>
+                                        <Money value={c.remaining} className="font-semibold opacity-70" />
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <p className="inline-flex items-start gap-2 rounded-[var(--cdv-r-md)] px-3.5 py-2.5 text-sm" style={{ background: 'var(--cdv-danger-soft)', color: 'var(--cdv-danger)' }}>
+                                  <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden />
+                                  <span>No card with funds covers this merchant.</span>
+                                </p>
+                              )}
+                            </div>
+
                             {merchantDeals.length > 0 && (
-                              <div className="mt-4 pt-4 border-t border-white/20">
-                                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-200 mb-3 flex items-center gap-1.5"><Gift size={14} /> Club Deals Available</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="mt-5 border-t border-white/15 pt-4">
+                                <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)] mb-3 flex items-center gap-1.5">
+                                  <Gift size={12} aria-hidden /> Club deals
+                                </p>
+                                <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                   {merchantDeals.map((deal, idx) => (
-                                    <div key={deal._bhKey || deal.product_id || idx} className="bg-black/20 border border-white/10 rounded-xl p-3 text-sm flex gap-3 items-start backdrop-blur-sm">
-                                      <span className={`px-2 py-1 rounded text-[10px] font-bold text-white whitespace-nowrap ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span>
-                                      <DealLink url={deal.url || deal.product_url} className="text-amber-50 font-medium text-sm leading-tight hover:underline">{deal.d}</DealLink>
-                                    </div>
+                                    <li key={deal._bhKey || deal.product_id || idx} className="flex items-start gap-2.5 rounded-[var(--cdv-r-md)] border border-white/10 bg-black/25 p-3">
+                                      <span className="cdv-chip cdv-cat shrink-0" style={{ '--cat-h': CLUBS[deal.c].hue }} dir="rtl" translate="no">{CLUBS[deal.c].name}</span>
+                                      <DealLink url={deal.url || deal.product_url} className="min-w-0 text-sm leading-snug text-[var(--cdv-on-band)] hover:underline">{deal.d}</DealLink>
+                                    </li>
                                   ))}
-                                </div>
+                                </ul>
                               </div>
                             )}
-                          </div>
+                          </article>
                         );
                       });
                     })()}
                   </div>
                 )}
-              </div>
+              </section>
+
+              {cardBalances.length > 0 && uniqueCoverageCategories.length > 0 && (
+                <section aria-labelledby="cdv-coverage-heading" className="cdv-panel overflow-hidden">
+                  <div className="border-b border-[var(--cdv-hairline)] px-5 py-4 sm:px-6">
+                    <h3 id="cdv-coverage-heading" className="font-semibold text-[var(--cdv-ink)]">Category coverage</h3>
+                    <p className="mt-1 max-w-2xl text-sm text-[var(--cdv-mute)]">
+                      Which of your cards can pay in each category.
+                      {cardBalances.length > 5 && <span className="hidden sm:inline"> Scroll sideways for the rest of your cards.</span>}
+                    </p>
+                  </div>
+
+                  {/* Small screens get a stacked list; the matrix needs width to stay legible. */}
+                  <ul className="cdv-divide sm:hidden">
+                    {uniqueCoverageCategories.map((category) => {
+                      const supporting = cardBalances.filter((c) => (c.derivedCats || []).includes(category));
+                      return (
+                        <li key={category} className="px-5 py-4">
+                          <div className="flex items-center gap-2.5">
+                            <span className="cdv-cat-mark" style={categoryHueStyle(category)} aria-hidden>{CATEGORY_ICONS[category] || '🏷️'}</span>
+                            <h4 className="text-sm font-semibold leading-tight text-[var(--cdv-ink)] min-w-0">{category}</h4>
+                          </div>
+                          <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {supporting.length === 0 ? (
+                              <span className="cdv-badge cdv-badge--neutral">No coverage</span>
+                            ) : (
+                              supporting.map((c) => <span key={c.id} className="cdv-badge cdv-badge--positive">{c.name}</span>)
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full min-w-[800px] border-collapse text-sm">
+                      <caption className="sr-only">Wallet card coverage by shopping category</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col" className="sticky left-0 z-20 min-w-[210px] border-b border-r border-[var(--cdv-hairline)] bg-[var(--cdv-surface)] px-5 py-3 text-left">
+                            <span className="cdv-eyebrow">Category</span>
+                          </th>
+                          {cardBalances.map((card) => {
+                            const prog = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
+                            return (
+                              <th key={card.id} scope="col" className="min-w-[120px] border-b border-[var(--cdv-hairline)] px-3 py-3 align-bottom text-center">
+                                <span className="flex flex-col items-center gap-1">
+                                  <span className="text-xs font-semibold leading-tight text-[var(--cdv-ink)]">{card.name}</span>
+                                  <span className="max-w-[140px] truncate text-[10px] text-[var(--cdv-faint)]">{prog.name}</span>
+                                </span>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="cdv-divide">
+                        {uniqueCoverageCategories.map((category) => (
+                          <tr key={category} className="group">
+                            <th scope="row" className="sticky left-0 z-10 border-r border-[var(--cdv-hairline)] bg-[var(--cdv-surface)] px-5 py-3 text-left font-medium text-[var(--cdv-body)] transition-colors duration-150 group-hover:bg-[var(--cdv-surface-sunken)]">
+                              <span className="inline-flex items-center gap-2">
+                                <span className="cdv-cat-mark" style={categoryHueStyle(category)} aria-hidden>{CATEGORY_ICONS[category] || '🏷️'}</span>
+                                <span className="leading-tight">{category}</span>
+                              </span>
+                            </th>
+                            {cardBalances.map((card) => {
+                              const covered = (card.derivedCats || []).includes(category);
+                              return (
+                                <td key={`${category}-${card.id}`} className="p-2 text-center align-middle transition-colors duration-150 group-hover:bg-[var(--cdv-surface-sunken)]">
+                                  {covered ? (
+                                    <CheckCircle2 className="mx-auto text-[var(--cdv-positive)]" size={18} aria-label={`${card.name} covers ${category}`} />
+                                  ) : (
+                                    <>
+                                      <span className="mx-auto block h-1 w-1 rounded-full bg-[var(--cdv-hairline-heavy)]" aria-hidden />
+                                      <span className="sr-only">{card.name} does not cover {category}</span>
+                                    </>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
           {/* Clubs */}
           {activeTab === 'clubs' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div><h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Discount Clubs</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Select your clubs to unlock exclusive deals.</p></div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <div className="min-w-0">
+                <h2 className="cdv-display text-3xl">Clubs</h2>
+                <p className="mt-1.5 text-[var(--cdv-mute)]">Turn on the clubs you belong to and their deals appear here.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {Object.values(CLUBS).map((club) => {
                   const isActive = userClubs.includes(club.id);
-                  return <button key={club.id} onClick={() => handleToggleClub(club.id)} className={`p-4 rounded-2xl border-2 transition-all flex items-center justify-between shadow-sm ${isActive ? `border-transparent ${club.color} text-white shadow-lg transform scale-105` : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600'}`}><span className="font-bold text-lg">{club.name}</span>{isActive ? <CheckCircle2 size={24} /> : <Plus size={24} />}</button>;
+                  return (
+                    <button
+                      key={club.id}
+                      type="button"
+                      onClick={() => handleToggleClub(club.id)}
+                      aria-pressed={isActive}
+                      className={`cdv-panel cdv-club flex items-center justify-between gap-3 px-5 py-4 text-left transition-colors duration-150 ${isActive ? 'cdv-club--on' : 'hover:border-[var(--cdv-hairline-strong)]'}`}
+                      style={{ '--cat-h': club.hue }}
+                    >
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-[var(--cdv-ink)] truncate" dir="rtl" translate="no">{club.name}</span>
+                        <span className="cdv-eyebrow mt-0.5 block">
+                          {isActive ? 'Active' : 'Not a member'}
+                        </span>
+                      </span>
+                      {isActive
+                        ? <CheckCircle2 size={19} className="cdv-club__mark shrink-0" aria-hidden />
+                        : <Plus size={19} className="shrink-0 text-[var(--cdv-faint)]" aria-hidden />}
+                    </button>
+                  );
                 })}
               </div>
-              <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                  <div className="relative max-w-md"><Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} /><input type="text" value={clubSearch} onChange={(e) => setClubSearch(e.target.value)} placeholder="Search discounts (e.g. Pizza, FOX)..." className="w-full pl-10 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" /></div>
+
+              <section aria-labelledby="cdv-deals-heading" className="cdv-panel overflow-hidden">
+                <div className="border-b border-[var(--cdv-hairline)] px-5 py-4">
+                  <h3 id="cdv-deals-heading" className="sr-only">Available deals</h3>
+                  <div className="relative max-w-md">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                    <input
+                      type="search"
+                      name="deal"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={clubSearch}
+                      onChange={(e) => { setClubSearch(e.target.value); setDealsShown(DEALS_PAGE_SIZE); }}
+                      placeholder="Search deals — pizza, FOX, hotel…"
+                      aria-label="Search deals"
+                      className="cdv-input !pl-10"
+                    />
+                  </div>
                 </div>
-                <div className="p-6">
-                  {userClubs.length === 0 ? (
-                    <div className="text-center p-8"><Gift size={48} className="mx-auto mb-4 text-slate-200 dark:text-slate-800" /><p className="text-slate-500 font-medium">Select a club above to see your available deals.</p></div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {discountsData.filter((d) => userClubs.includes(d.c) && dealMatchesClubSearch(d, clubSearch)).map((deal, idx) => (
-                        <div key={deal.product_id ? `pais-${deal.product_id}` : deal._bhKey || `${deal.c}-${idx}-${deal.m.slice(0, 40)}`} className="flex gap-4 items-start p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                          <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat || 'Other'} className="w-12 h-12 rounded-lg" />
-                          <div>
-                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">{deal.m.split('(')[0].trim()}<span className={`text-[9px] px-1.5 py-0.5 rounded text-white ${CLUBS[deal.c].color}`}>{CLUBS[deal.c].name}</span></div>
-                            <DealLink url={deal.url || deal.product_url} className="text-sm font-medium text-emerald-600 dark:text-emerald-400 leading-tight hover:underline inline-block">{deal.d}</DealLink>
-                          </div>
+
+                {userClubs.length === 0 ? (
+                  <div className="px-6 py-14 text-center">
+                    <Gift size={28} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
+                    <p className="font-medium text-[var(--cdv-ink)]">No clubs selected</p>
+                    <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--cdv-mute)]">Pick a club above to load its current deals.</p>
+                  </div>
+                ) : (() => {
+                  const visibleDeals = discountsData.filter((d) => userClubs.includes(d.c) && dealMatchesClubSearch(d, clubSearch));
+                  if (visibleDeals.length === 0) {
+                    return (
+                      <div className="px-6 py-14 text-center" aria-live="polite">
+                        <Search size={28} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
+                        <p className="font-medium text-[var(--cdv-ink)]">No deals match &ldquo;{clubSearch}&rdquo;</p>
+                        <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--cdv-mute)]">Try a shorter term, or clear the search to browse everything.</p>
+                      </div>
+                    );
+                  }
+                  const shown = visibleDeals.slice(0, dealsShown);
+                  return (
+                    <>
+                      <p className="px-5 pt-4 cdv-eyebrow" aria-live="polite">
+                        {shown.length < visibleDeals.length
+                          ? `${shown.length} of ${visibleDeals.length} deals`
+                          : `${visibleDeals.length} deals`}
+                      </p>
+                      {/*
+                        Deals are Hebrew, so each row gets dir="rtl". Under the document's
+                        LTR base direction the trailing ₪ and the parentheses around prices
+                        were reordered, which made the prices read wrong.
+                      */}
+                      <ul className="mt-4 grid grid-cols-1 gap-px border-t border-[var(--cdv-hairline)] bg-[var(--cdv-hairline)] md:grid-cols-2">
+                        {shown.map((deal, idx) => (
+                          <li
+                            key={deal.product_id ? `pais-${deal.product_id}` : deal._bhKey || `${deal.c}-${idx}-${deal.m.slice(0, 40)}`}
+                            dir="rtl"
+                            className="flex items-start gap-3 bg-[var(--cdv-surface)] p-4 transition-colors duration-150 hover:bg-[var(--cdv-surface-sunken)]"
+                          >
+                            <MerchantIcon merchantName={deal.m} category={KNOWN_MERCHANTS[deal.m]?.cat || 'Other'} className="w-10 h-10 rounded-[10px] shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="min-w-0 break-words font-semibold leading-tight text-[var(--cdv-ink)]">{deal.m.split('(')[0].trim()}</h4>
+                                <span className="cdv-chip cdv-cat" style={{ '--cat-h': CLUBS[deal.c].hue }} translate="no">{CLUBS[deal.c].name}</span>
+                              </div>
+                              <DealLink
+                                url={deal.url || deal.product_url}
+                                className="mt-1 block text-sm leading-snug text-[var(--cdv-accent)] hover:underline"
+                              >
+                                {deal.d}
+                              </DealLink>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      {shown.length < visibleDeals.length && (
+                        <div className="border-t border-[var(--cdv-hairline)] p-5 text-center">
+                          <button type="button" onClick={() => setDealsShown((n) => n + DEALS_PAGE_SIZE)} className="cdv-btn cdv-btn--outline">
+                            Show {Math.min(DEALS_PAGE_SIZE, visibleDeals.length - shown.length)} more
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </section>
             </div>
           )}
 
-          {/* AI — brutalist chat (scoped styles in aiChatBrutalist.css) */}
+          {/* Advisor — scoped styles in aiChatBrutalist.css */}
           {activeTab === 'ai' && (
-            <div className="ai-chat-brutalist mx-auto flex min-h-0 w-full max-w-5xl flex-1 basis-0 flex-col text-left max-sm:translate-y-[15px] sm:-translate-y-[10px] animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="ai-brutalist-shell min-h-0">
-                {aiTipBarOpen ? (
-                  <div className="ai-brutalist-tip-bar">
-                    <p className="ai-brutalist-tip-text max-sm:line-clamp-2 sm:line-clamp-none">TIP: Budget + item + area = sharper combos.</p>
+            <div className="ai-advisor-chat mx-auto flex min-h-0 w-full max-w-4xl flex-1 basis-0 flex-col text-left animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="ai-chat-shell">
+                {/*
+                  Clear lives in the header instead of the old sticky overlay, which
+                  floated over the first message and clipped it.
+                */}
+                <div className="ai-chat-header">
+                  <h2 className="ai-chat-header__title">
+                    <span className="ai-chat-header__dot" aria-hidden />
+                    Advisor
+                  </h2>
+                  <div className="ai-chat-header__actions">
+                    {!aiTipBarOpen && (
+                      <button
+                        type="button"
+                        className="cdv-btn cdv-btn--ghost"
+                        onClick={() => {
+                          setAiTipBarOpen(true);
+                          try {
+                            localStorage.removeItem(AI_TIP_BAR_DISMISSED_KEY);
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                      >
+                        Show tip
+                      </button>
+                    )}
+                    <button type="button" onClick={clearAiChatHistory} className="cdv-icon-btn cdv-icon-btn--danger" title="Clear chat history">
+                      <Trash2 size={16} aria-hidden />
+                      <span className="sr-only">Clear chat history</span>
+                    </button>
+                  </div>
+                </div>
+
+                {aiTipBarOpen && (
+                  <div className="ai-chat-tip">
+                    <p className="ai-chat-tip__text">
+                      <strong>Tip</strong> — budget, item and area together give sharper combinations.
+                    </p>
                     <button
                       type="button"
-                      className="ai-brutalist-tip-dismiss"
-                      title="Close tip"
-                      aria-label="Close tip"
+                      className="cdv-icon-btn"
+                      title="Dismiss tip"
                       onClick={() => {
                         setAiTipBarOpen(false);
                         try {
@@ -2192,48 +2641,27 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                         }
                       }}
                     >
-                      <X size={16} className="text-white/90" strokeWidth={2.5} aria-hidden />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="ai-brutalist-tip-bar ai-brutalist-tip-bar--minimal">
-                    <button
-                      type="button"
-                      className="ai-brutalist-tip-restore"
-                      onClick={() => {
-                        setAiTipBarOpen(true);
-                        try {
-                          localStorage.removeItem(AI_TIP_BAR_DISMISSED_KEY);
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
-                    >
-                      Show tip
+                      <X size={15} aria-hidden />
+                      <span className="sr-only">Dismiss tip</span>
                     </button>
                   </div>
                 )}
-                <div className="ai-brutalist-scroll space-y-4">
-                  <div className="ai-brutalist-sticky-clear">
-                    <button type="button" onClick={clearAiChatHistory} className="ai-brutalist-clear ai-brutalist-clear--sticky" title="Clear Chat History">
-                      <Trash2 size={18} className="text-violet-100" aria-hidden />
-                      <span className="sr-only">Clear chat history</span>
-                    </button>
-                  </div>
+
+                <div className="ai-chat-scroll space-y-4">
                   {aiMessages.map((msg, idx) => {
                     const replyLang = msg.role === 'model' ? precedingUserLang(aiMessages, idx) : 'he';
                     return (
-                      <div key={idx} className={`flex items-start ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div key={idx} className={`ai-chat-row ${msg.role === 'user' ? 'ai-chat-row--user' : ''}`}>
                         {msg.role === 'model' && (
-                          <div className="ai-brutalist-avatar">
-                            <Bot size={16} className="text-violet-200" aria-hidden />
+                          <div className="ai-chat-avatar">
+                            <Bot size={15} aria-hidden />
                           </div>
                         )}
                         <div
-                          className={`ai-brutalist-bubble break-words ${msg.role === 'user' ? 'ai-brutalist-bubble--user text-left whitespace-pre-wrap' : `ai-brutalist-bubble--model ${replyLang === 'en' ? 'text-left' : 'text-right'}`}`}
+                          className={`ai-chat-bubble break-words ${msg.role === 'user' ? 'ai-chat-bubble--user whitespace-pre-wrap text-left' : `ai-chat-bubble--model ${replyLang === 'en' ? 'text-left' : 'text-right'}`}`}
                           dir={msg.role === 'model' ? (replyLang === 'en' ? 'ltr' : 'rtl') : 'auto'}
                         >
-                          <div className="ai-brutalist-meta">{msg.role === 'user' ? 'You' : 'Advisor'}</div>
+                          <div className="ai-chat-meta">{msg.role === 'user' ? 'You' : 'Advisor'}</div>
                           <div dir="auto">
                             {msg.role === 'model' ? renderAdvisorMessage(msg.text, replyLang) : renderChatText(msg.text)}
                           </div>
@@ -2241,10 +2669,28 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       </div>
                     );
                   })}
+                  {/* Before the first question the pane is otherwise empty, so offer openers. */}
+                  {aiMessages.length <= 1 && !isAiTyping && (
+                    <div className="pt-2">
+                      <p className="cdv-eyebrow mb-3">Try asking</p>
+                      <div className="flex flex-wrap gap-2">
+                        {AI_STARTER_PROMPTS.map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={() => setAiInput(prompt)}
+                            className="cdv-chip cdv-chip--selectable text-left"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {isAiTyping && (
-                    <div className="flex justify-start items-start gap-2">
-                      <div className="ai-brutalist-avatar">
-                        <Bot size={16} className="text-violet-200 opacity-60" aria-hidden />
+                    <div className="ai-chat-row">
+                      <div className="ai-chat-avatar">
+                        <Bot size={15} className="opacity-60" aria-hidden />
                       </div>
                       <div className="ai-loader-card">
                         <HamsterWheelLoader />
@@ -2254,24 +2700,27 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   )}
                   <div ref={chatEndRef} />
                 </div>
-                <div className="ai-brutalist-form-footer">
-                  <form onSubmit={handleSendAI} className="brutalist-container">
-                    <div className="brutalist-input-wrap smooth-type">
+
+                <div className="ai-chat-composer">
+                  <form onSubmit={handleSendAI}>
+                    <label htmlFor="ai-chat-input" className="sr-only">Message the advisor</label>
+                    <div className="ai-chat-composer__field">
                       <input
-                        id="ai-brutalist-input"
+                        id="ai-chat-input"
                         type="text"
                         value={aiInput}
                         onChange={(e) => setAiInput(e.target.value)}
                         placeholder="e.g. I need pizza for 10 people…"
                         disabled={isAiTyping}
-                        className="brutalist-input"
+                        className="ai-chat-composer__input"
                         autoComplete="off"
+                        dir="auto"
                       />
-                      <label htmlFor="ai-brutalist-input" className="brutalist-label">MESSAGE</label>
-                      <button type="submit" disabled={!aiInput.trim() || isAiTyping} className="brutalist-send-btn" aria-label="Send">
-                        <Send size={18} />
+                      <button type="submit" disabled={!aiInput.trim() || isAiTyping} className="ai-chat-composer__send" aria-label="Send message">
+                        <Send size={16} aria-hidden />
                       </button>
                     </div>
+                    <p className="ai-chat-composer__hint">Answers use your real card balances and active club deals.</p>
                   </form>
                 </div>
               </div>
@@ -2279,50 +2728,81 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           )}
         </main>
 
-        <nav className="cdv-comic-nav fixed bottom-0 left-0 right-0 backdrop-blur-xl px-2 sm:px-4 py-2 flex justify-around sm:justify-center sm:gap-6 lg:gap-10 z-40 transition-colors overflow-x-auto">
-          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' }, { id: 'wallets', icon: CreditCard, label: 'Wallet' }, { id: 'planner', icon: Receipt, label: 'Planner' }, { id: 'insights', icon: Search, label: 'Search' }, { id: 'clubs', icon: Gift, label: 'Clubs' }, { id: 'ai', icon: Bot, label: 'Smart AI' }].map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-0.5 transition-all duration-300 min-w-[44px] ${activeTab === item.id ? 'text-indigo-600 dark:text-violet-400 scale-110' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 hover:scale-105'}`}>
-              <item.icon size={20} className={activeTab === item.id ? 'stroke-[2.5px]' : ''} />
-              <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest opacity-80 whitespace-nowrap leading-none">{item.label}</span>
+        <nav aria-label="Main" className="cdv-nav fixed bottom-0 left-0 right-0 z-40 flex justify-around gap-1 px-2 py-1.5 sm:justify-center sm:gap-4 lg:gap-8">
+          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Home' }, { id: 'wallets', icon: CreditCard, label: 'Wallet' }, { id: 'planner', icon: Receipt, label: 'Planner' }, { id: 'insights', icon: Search, label: 'Checkout' }, { id: 'clubs', icon: Gift, label: 'Clubs' }, { id: 'ai', icon: Bot, label: 'Advisor' }].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveTab(item.id)}
+              aria-current={activeTab === item.id ? 'page' : undefined}
+              className={`cdv-nav-item ${activeTab === item.id ? 'cdv-nav-item--on' : ''}`}
+            >
+              <item.icon size={19} aria-hidden />
+              <span className="cdv-nav-item__label">{item.label}</span>
             </button>
           ))}
         </nav>
 
+        <Modal isOpen={!!cardPendingDelete} onClose={() => setCardPendingDelete(null)} title="Delete this card?">
+          <p className="text-[var(--cdv-body)]">
+            <span className="font-semibold text-[var(--cdv-ink)]">{cardPendingDelete?.name}</span> will be removed from your wallet.
+            Planned purchases that point at it stay in the ledger but lose their funding source.
+          </p>
+          <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={() => setCardPendingDelete(null)} className="cdv-btn cdv-btn--outline">Keep card</button>
+            <button type="button" onClick={confirmDeleteCard} className="cdv-btn" style={{ background: 'var(--cdv-danger)', color: '#fff' }}>
+              <Trash2 size={16} aria-hidden /> Delete card
+            </button>
+          </div>
+        </Modal>
+
         <Modal isOpen={showCardForm} onClose={resetCardForm} title={editingCardId ? 'Edit Card' : 'Add Program Card'}>
           <form onSubmit={handleSaveCard} className="space-y-6">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Select Program Type</label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {Object.values(PROGRAMS).map((prog) => (
-                  <div key={prog.id} onClick={() => setNewCard({ ...newCard, programId: prog.id, categories: [] })} className={`cursor-pointer p-3 rounded-xl border-2 flex flex-col justify-center text-center gap-1 transition-all ${newCard.programId === prog.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-md' : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}>
-                    <span className="font-bold text-sm leading-tight">{prog.name}</span>
-                    <span className="text-[10px] opacity-70 leading-tight">{prog.description}</span>
-                  </div>
-                ))}
+            <fieldset>
+              <legend className="cdv-label">Program type</legend>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Object.values(PROGRAMS).map((prog) => {
+                  const isSelected = newCard.programId === prog.id;
+                  return (
+                    <button
+                      type="button"
+                      key={prog.id}
+                      onClick={() => setNewCard({ ...newCard, programId: prog.id, categories: [] })}
+                      aria-pressed={isSelected}
+                      className="flex flex-col gap-0.5 rounded-[var(--cdv-r-md)] border p-3 text-left transition-colors duration-150"
+                      style={isSelected
+                        ? { borderColor: 'var(--cdv-accent)', background: 'var(--cdv-accent-soft)' }
+                        : { borderColor: 'var(--cdv-hairline)', background: 'var(--cdv-surface-sunken)' }}
+                    >
+                      <span className={`text-sm font-semibold leading-tight ${isSelected ? 'text-[var(--cdv-accent)]' : 'text-[var(--cdv-ink)]'}`}>{prog.name}</span>
+                      <span className="text-[11px] leading-tight text-[var(--cdv-mute)]">{prog.description}</span>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            </fieldset>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Display Name</label><input type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium" placeholder="e.g. My Cibus Card" /></div>
-              <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Total Limit (₪)</label><input type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono font-bold text-lg" placeholder="0.00" /></div>
+              <div><label htmlFor="card-name" className="cdv-label">Display Name</label><input id="card-name" type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="cdv-input" placeholder="e.g. My Cibus Card" /></div>
+              <div><label htmlFor="card-balance" className="cdv-label">Total Limit (₪)</label><input id="card-balance" type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" /></div>
             </div>
 
             <div>
-              <label htmlFor="cdv-card-link" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">לינק לכרטיס</label>
+              <label htmlFor="cdv-card-link" className="cdv-label">Card link</label>
               <input
                 id="cdv-card-link"
                 type="url"
                 inputMode="url"
                 value={newCard.cardLink || ''}
                 onChange={(e) => setNewCard({ ...newCard, cardLink: e.target.value })}
-                className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-medium"
+                className="cdv-input"
                 placeholder="https://…"
                 dir="ltr"
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Optional. A button appears on the wallet card only when this balance link is saved.</p>
+              <p className="mt-2 text-xs text-[var(--cdv-mute)]">Optional. A button appears on the wallet card only when this balance link is saved.</p>
             </div>
 
-            <div className="p-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 space-y-3">
+            <div className="space-y-3 rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline)] bg-[var(--cdv-surface-sunken)] p-4">
               <div className="flex flex-wrap items-center gap-3">
                 <input
                   id="cdv-custom-plastic"
@@ -2332,12 +2812,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     if (e.target.checked) {
                       const cur = (newCard.plasticAccentHex || '').trim();
                       const norm = cur.startsWith('#') ? cur : (cur ? `#${cur}` : '');
-                      setNewCard({ ...newCard, plasticAccentHex: hexToRgb(norm) ? norm : '#6366f1' });
+                      setNewCard({ ...newCard, plasticAccentHex: hexToRgb(norm) ? norm : '#176551' });
                     } else setNewCard({ ...newCard, plasticAccentHex: '' });
                   }}
-                  className="w-5 h-5 rounded border-slate-400 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]"
                 />
-                <label htmlFor="cdv-custom-plastic" className="font-bold text-slate-800 dark:text-slate-200 cursor-pointer">Custom card color</label>
+                <label htmlFor="cdv-custom-plastic" className="cursor-pointer font-medium text-[var(--cdv-ink)]">Custom card color</label>
               </div>
               {newCard.plasticAccentHex ? (
                 <div className="flex flex-wrap items-center gap-4">
@@ -2347,82 +2827,122 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     value={(() => {
                       const c = (newCard.plasticAccentHex || '').trim();
                       const n = c.startsWith('#') ? c : `#${c}`;
-                      return hexToRgb(n) ? n : '#6366f1';
+                      return hexToRgb(n) ? n : '#176551';
                     })()}
                     onChange={(ev) => setNewCard({ ...newCard, plasticAccentHex: ev.target.value })}
-                    className="h-12 w-24 cursor-pointer rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-transparent"
+                    className="h-10 w-20 cursor-pointer rounded-[var(--cdv-r-sm)] border border-[var(--cdv-hairline-strong)] bg-transparent"
                   />
-                  <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xs">Overrides the program default on the wallet plastic. Uncheck to use the built-in program colors.</p>
+                  <p className="max-w-xs text-xs text-[var(--cdv-mute)]">Overrides the program default on the wallet plastic. Uncheck to use the built-in program colors.</p>
                 </div>
               ) : (
-                <p className="text-xs text-slate-600 dark:text-slate-400">Wallet preview uses each program’s default plastic gradient.</p>
+                <p className="text-xs text-[var(--cdv-mute)]">Wallet preview uses each program’s default plastic gradient.</p>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Card Rules</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {Object.values(RULE_TYPES).map((rule) => (
-                  <div key={rule.id} onClick={() => setNewCard({ ...newCard, ruleType: rule.id })} className={`cursor-pointer p-4 rounded-xl border-2 flex flex-col items-center text-center gap-2 transition-all font-semibold ${newCard.ruleType === rule.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-md' : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-slate-300'}`}><rule.icon size={20} /><span className="text-sm">{rule.label}</span></div>
-                ))}
+            <fieldset>
+              <legend className="cdv-label">How the balance behaves</legend>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {Object.values(RULE_TYPES).map((rule) => {
+                  const isSelected = newCard.ruleType === rule.id;
+                  return (
+                    <button
+                      type="button"
+                      key={rule.id}
+                      onClick={() => setNewCard({ ...newCard, ruleType: rule.id })}
+                      aria-pressed={isSelected}
+                      className="flex items-center gap-2.5 rounded-[var(--cdv-r-md)] border px-4 py-3 text-sm font-medium transition-colors duration-150"
+                      style={isSelected
+                        ? { borderColor: 'var(--cdv-accent)', background: 'var(--cdv-accent-soft)', color: 'var(--cdv-accent)' }
+                        : { borderColor: 'var(--cdv-hairline)', background: 'var(--cdv-surface-sunken)', color: 'var(--cdv-body)' }}
+                    >
+                      <rule.icon size={16} className="shrink-0" aria-hidden />
+                      {rule.label}
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            </fieldset>
 
-            {newCard.ruleType === 'expires' && <div className="animate-in slide-in-from-top-2 fade-in"><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Expiration Date</label><input type="date" required value={newCard.expiryDate || ''} onChange={(e) => setNewCard({ ...newCard, expiryDate: e.target.value })} className="w-full sm:w-1/2 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all" /></div>}
+            {newCard.ruleType === 'expires' && <div className="animate-in slide-in-from-top-2 fade-in"><label htmlFor="card-expiry" className="cdv-label">Expiration Date</label><input id="card-expiry" type="date" required value={newCard.expiryDate || ''} onChange={(e) => setNewCard({ ...newCard, expiryDate: e.target.value })} className="cdv-input sm:!w-1/2" /></div>}
 
             {newCard.programId === 'CUSTOM' ? (
-              <div className="animate-in fade-in">
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Allowed Categories (Custom)</label>
-                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-2 -m-2">
+              <fieldset className="animate-in fade-in">
+                <legend className="cdv-label">Where this card can pay</legend>
+                {/* No inner scroll: a nested scroller inside the modal clipped the last row. */}
+                <div className="flex flex-wrap gap-1.5">
                   {CATEGORIES.map((cat) => {
                     const isSelected = newCard.categories.includes(cat);
-                    return <button type="button" key={cat} onClick={() => toggleCategorySelection(cat)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border-2 flex items-center gap-1.5 ${isSelected ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-md transform scale-[1.02]' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>{CATEGORY_ICONS[cat]} {cat}</button>;
+                    return (
+                      <button
+                        type="button"
+                        key={cat}
+                        onClick={() => toggleCategorySelection(cat)}
+                        aria-pressed={isSelected}
+                        className={`cdv-chip cdv-chip--selectable cdv-cat ${isSelected ? 'cdv-chip--on' : ''}`}
+                        style={categoryHueStyle(cat)}
+                      >
+                        <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
+                      </button>
+                    );
                   })}
                 </div>
-              </div>
+                {newCard.categories.length === 0 && (
+                  <p className="mt-2.5 text-xs text-[var(--cdv-mute)]">Pick at least one category to save this card.</p>
+                )}
+              </fieldset>
             ) : (
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl flex items-start gap-3"><Info className="text-blue-500 shrink-0 mt-0.5" size={20} /><div><div className="font-bold text-blue-800 dark:text-blue-300 text-sm">Auto-Managed Logic</div><div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Categories and accepted merchants for {PROGRAMS[newCard.programId].name} are managed automatically by the system engine.</div></div></div>
+              <div className="flex items-start gap-2.5 rounded-[var(--cdv-r-md)] border border-[var(--cdv-accent-border)] bg-[var(--cdv-accent-soft)] p-4">
+                <Info className="mt-0.5 shrink-0 text-[var(--cdv-accent)]" size={17} aria-hidden />
+                <p className="text-sm text-[var(--cdv-body)]">
+                  Categories and accepted merchants for <span className="font-semibold text-[var(--cdv-ink)]">{PROGRAMS[newCard.programId].name}</span> are kept up to date automatically.
+                </p>
+              </div>
             )}
-            <div className="pt-6 border-t border-slate-100 dark:border-slate-800"><button type="submit" disabled={newCard.programId === 'CUSTOM' && newCard.categories.length === 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl disabled:opacity-50 transition-all shadow-lg hover:shadow-xl active:scale-[0.98] text-lg">{editingCardId ? 'Update Wallet' : 'Add to Wallet'}</button></div>
+            <div className="border-t border-[var(--cdv-hairline)] pt-6">
+              <button type="submit" disabled={newCard.programId === 'CUSTOM' && newCard.categories.length === 0} className="cdv-btn cdv-btn--primary w-full !py-3">
+                {editingCardId ? 'Save changes' : 'Add to Wallet'}
+              </button>
+            </div>
           </form>
         </Modal>
 
         <Modal isOpen={showExpenseForm} onClose={resetExpenseForm} title={editingExpenseId ? 'Edit Plan' : 'Plan a Purchase'}>
           <form onSubmit={handleSaveExpense} className="space-y-6">
-            <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-              <input type="checkbox" id="isCompleted" checked={newExpense.isCompleted} onChange={(e) => setNewExpense({ ...newExpense, isCompleted: e.target.checked })} className="w-6 h-6 text-emerald-600 bg-white border-slate-300 rounded focus:ring-emerald-500" />
-              <label htmlFor="isCompleted" className="cursor-pointer"><div className="font-bold text-slate-800 dark:text-slate-200">Already Spent?</div><div className="text-xs text-slate-500 dark:text-slate-400">Check this if you have already completed this purchase at the store.</div></label>
+            <div className="flex items-center gap-3 rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline)] bg-[var(--cdv-surface-sunken)] p-4">
+              <input type="checkbox" id="isCompleted" checked={newExpense.isCompleted} onChange={(e) => setNewExpense({ ...newExpense, isCompleted: e.target.checked })} className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]" />
+              <label htmlFor="isCompleted" className="cursor-pointer"><div className="font-medium text-[var(--cdv-ink)]">Already spent</div><div className="text-xs text-[var(--cdv-mute)]">Tick this if you have already paid at the store.</div></label>
             </div>
 
-            <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Item / Purpose</label><input type="text" required value={newExpense.name} onChange={(e) => setNewExpense({ ...newExpense, name: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" placeholder="e.g. Cinema Tickets" /></div>
+            <div><label htmlFor="exp-name" className="cdv-label">Item / Purpose</label><input id="exp-name" type="text" required value={newExpense.name} onChange={(e) => setNewExpense({ ...newExpense, name: e.target.value })} className="cdv-input" placeholder="e.g. Cinema Tickets" /></div>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Categories</label>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Select every category this purchase touches (one or more).</p>
-              <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto p-1 -m-1">
+            <fieldset className="min-w-0">
+              <legend className="cdv-label">Categories</legend>
+              <p className="mb-3 text-xs text-[var(--cdv-mute)]">Select every category this purchase touches (one or more).</p>
+              {/* No inner scroll: a nested scroller inside the modal clipped the last row. */}
+              <div className="-m-1 flex flex-wrap gap-2 p-1">
                 {CATEGORIES.map((cat) => {
                   const isSelected = newExpense.expenseCategories.includes(cat);
                   return (
-                    <button type="button" key={cat} onClick={() => toggleExpenseCategory(cat)} className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border-2 flex items-center gap-1.5 ${isSelected ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-800 hover:border-slate-300'}`}>
-                      {CATEGORY_ICONS[cat]} {cat}
+                    <button type="button" key={cat} onClick={() => toggleExpenseCategory(cat)} aria-pressed={isSelected} className={`cdv-chip cdv-chip--selectable cdv-cat ${isSelected ? 'cdv-chip--on' : ''}`} style={categoryHueStyle(cat)}>
+                      <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
                     </button>
                   );
                 })}
               </div>
-            </div>
+            </fieldset>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Retailers (optional)</label>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Add several stores for the same trip or basket. Pick from search or type and press Add.</p>
+              <label htmlFor="exp-retailer" className="cdv-label">Retailers (optional)</label>
+              <p className="mb-2 text-xs text-[var(--cdv-mute)]">Add several stores for the same trip or basket. Pick from search or type and press Add.</p>
               {newExpense.expenseMerchants.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-3">
                   {newExpense.expenseMerchants.map((name) => {
                     const iconCat = KNOWN_MERCHANTS[name]?.cat || newExpense.expenseCategories[0] || CATEGORIES[0];
                     return (
-                      <span key={name} className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200">
+                      <span key={name} className="cdv-chip !pr-1">
                         <MerchantIcon merchantName={name} category={iconCat} className="w-5 h-5 rounded border-0 bg-transparent" />
                         <span className="max-w-[10rem] truncate">{name.split('(')[0].trim()}</span>
-                        <button type="button" onClick={() => removeExpenseMerchant(name)} className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500" aria-label={`Remove ${name}`}><X size={14} /></button>
+                        <button type="button" onClick={() => removeExpenseMerchant(name)} className="rounded-full p-1 text-[var(--cdv-faint)] transition-colors duration-150 hover:bg-[var(--cdv-hairline)] hover:text-[var(--cdv-ink)]" aria-label={`Remove ${name}`}><X size={14} /></button>
                       </span>
                     );
                   })}
@@ -2430,39 +2950,46 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               )}
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} />
-                  <input type="text" value={merchantSearch} onChange={(e) => { setMerchantSearch(e.target.value); setShowMerchantSuggestions(true); }} onFocus={() => setShowMerchantSuggestions(true)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExpenseMerchantFreeText(); } }} className="w-full pl-10 pr-3 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" placeholder="e.g. Wolt, FOX..." />
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                  <input id="exp-retailer" type="search" autoComplete="off" value={merchantSearch} onChange={(e) => { setMerchantSearch(e.target.value); setShowMerchantSuggestions(true); }} onFocus={() => setShowMerchantSuggestions(true)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExpenseMerchantFreeText(); } }} className="cdv-input !pl-10" placeholder="e.g. Wolt, FOX…" />
                   {showMerchantSuggestions && merchantSearch && (
-                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
+                    <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline-strong)] bg-[var(--cdv-surface)] shadow-[var(--cdv-shadow-lg)]">
                       {getSmartMatches(merchantSearch).map(([name, data]) => (
-                        <div key={name} onMouseDown={() => addExpenseMerchantFromList(name, data.cat)} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex justify-between items-center">
-                          <div className="flex items-center gap-2"><MerchantIcon merchantName={name} category={data.cat} className="w-6 h-6 rounded border-0 bg-transparent" /><span className="font-bold text-slate-800 dark:text-slate-200">{name}</span></div>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded">{data.cat}</span>
-                        </div>
+                        /* onMouseDown so selection lands before the input's blur hides the list. */
+                        <button
+                          type="button"
+                          key={name}
+                          onMouseDown={() => addExpenseMerchantFromList(name, data.cat)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addExpenseMerchantFromList(name, data.cat); } }}
+                          className="flex w-full items-center justify-between gap-3 border-b border-[var(--cdv-hairline)] p-3 text-left transition-colors duration-150 last:border-0 hover:bg-[var(--cdv-surface-sunken)]"
+                        >
+                          <span className="flex min-w-0 items-center gap-2"><MerchantIcon merchantName={name} category={data.cat} className="w-6 h-6 rounded border-0 bg-transparent" /><span className="min-w-0 truncate font-medium text-[var(--cdv-ink)]" dir="auto">{name}</span></span>
+                          <span className="cdv-chip cdv-cat shrink-0" style={categoryHueStyle(data.cat)}>{data.cat}</span>
+                        </button>
                       ))}
-                      {getSmartMatches(merchantSearch).length === 0 && <div className="p-3 text-sm text-slate-500 text-center">No catalog match — use Add for a custom name.</div>}
+                      {getSmartMatches(merchantSearch).length === 0 && <p className="p-3 text-center text-sm text-[var(--cdv-mute)]">No catalog match — use Add for a custom name.</p>}
                     </div>
                   )}
                 </div>
-                <button type="button" onClick={addExpenseMerchantFreeText} className="shrink-0 px-4 py-3 rounded-xl border-2 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold text-sm hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors">Add</button>
+                <button type="button" onClick={addExpenseMerchantFreeText} className="cdv-btn cdv-btn--outline shrink-0">Add</button>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Plan for month (optional)</label>
-              <input type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value })} className="w-full sm:w-64 p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium" />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">Pick a date in the month you intend to pay. <strong className="font-semibold text-slate-600 dark:text-slate-300">Monthly</strong> cards count spending per calendar month and refill on the 1st; future dates let you plan against that month&apos;s balance.</p>
+              <label htmlFor="exp-month" className="cdv-label">Plan for month (optional)</label>
+              <input id="exp-month" type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value })} className="cdv-input sm:!w-64" />
+              <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">Pick a date in the month you intend to pay. <strong className="font-semibold text-[var(--cdv-body)]">Monthly</strong> cards count spending per calendar month and refill on the 1st; future dates let you plan against that month&apos;s balance.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Estimated Cost (₪)</label>
-                <input type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-mono font-bold text-lg text-emerald-600 dark:text-emerald-400" placeholder="0.00" />
-                {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-white border-slate-300" /><label htmlFor="isManualSplit" className="text-xs font-semibold text-slate-500 dark:text-slate-400 cursor-pointer">Split this payment across multiple cards?</label></div>}
+                <label htmlFor="exp-amount" className="cdv-label">Estimated Cost (₪)</label>
+                <input id="exp-amount" type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
+                {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]" /><label htmlFor="isManualSplit" className="cursor-pointer text-xs text-[var(--cdv-mute)]">Split this payment across multiple cards?</label></div>}
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pay With</label>
-                <select required value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium appearance-none">
+                <label htmlFor="exp-card" className="cdv-label">Pay With</label>
+                <select id="exp-card" required value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="cdv-input appearance-none">
                   <option value="" disabled>{!newExpense.expenseCategories?.length ? 'Choose a card (add categories to filter by rules)' : '-- Evaluated Cards --'}</option>
                   {sortedCardBalances.map((card) => {
                     const noCatsYet = !newExpense.expenseCategories?.length;
@@ -2486,10 +3013,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       : (isAllowedByRules && (rem > 0 || isEditingCurrent));
                     const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
                     const ruleHint = noCatsYet ? '' : (!isAllowedByRules ? ' - Rule Blocked' : (!canAfford ? ' - Requires Split' : ''));
-                    return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} (Available: ₪{rem.toLocaleString()}){ruleHint}</option>;
+                    return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} — {formatShekels(rem)} available{ruleHint}</option>;
                   })}
                 </select>
-                {newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="text-red-500 dark:text-red-400 text-[10px] mt-1.5 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
+                {newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--cdv-danger)]"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
               </div>
             </div>
 
@@ -2500,14 +3027,14 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 : getCalendarMonthKey(new Date());
               const splitCap = splitCard ? getRemainingForCardMonth(splitCard, splitMonthKey) : 0;
               return (
-                <div className="animate-in fade-in slide-in-from-top-2 bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50">
-                  <label className="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-2">Amount to charge to selected card (₪)</label>
-                  <input type="number" required min="0.01" max={Math.min(parseFloat(newExpense.amount || Infinity), splitCap || Infinity)} step="0.01" value={newExpense.chargeAmount} onChange={(e) => setNewExpense({ ...newExpense, chargeAmount: e.target.value })} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700 text-slate-900 dark:text-white rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono font-bold text-lg" placeholder="0.00" />
+                <div className="animate-in fade-in slide-in-from-top-2 rounded-[var(--cdv-r-md)] border border-[var(--cdv-accent-border)] bg-[var(--cdv-accent-soft)] p-4">
+                  <label htmlFor="exp-charge" className="cdv-label">Amount to charge to selected card (₪)</label>
+                  <input id="exp-charge" type="number" required min="0.01" max={Math.min(parseFloat(newExpense.amount || Infinity), splitCap || Infinity)} step="0.01" value={newExpense.chargeAmount} onChange={(e) => setNewExpense({ ...newExpense, chargeAmount: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
                 </div>
               );
             })()}
 
-            <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+            <div className="border-t border-[var(--cdv-hairline)] pt-6">
               {(() => {
                 const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
                 const planMonthKey = newExpense.scheduledFor
@@ -2522,7 +3049,19 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   if (actualLogAmount > planRemaining) actualLogAmount = planRemaining;
                   if (actualLogAmount < reqAmount && actualLogAmount > 0) isSplitNeeded = true;
                 }
-                return <button type="submit" className={`w-full text-white font-bold py-4 rounded-xl transition-all shadow-lg hover:shadow-xl active:scale-[0.98] text-lg ${isSplitNeeded ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{isSplitNeeded ? `Split Payment (Log ₪${actualLogAmount} & Continue)` : (editingExpenseId ? 'Update Purchase' : 'Confirm Plan')}</button>;
+                return (
+                  <button
+                    type="submit"
+                    className="cdv-btn w-full !py-3"
+                    style={isSplitNeeded
+                      ? { background: 'var(--cdv-warning)', color: '#fff' }
+                      : { background: 'var(--cdv-surface-inverse)', color: 'var(--cdv-on-inverse)' }}
+                  >
+                    {isSplitNeeded
+                      ? <>Split payment — charge <span className="cdv-amount">{formatShekels(actualLogAmount)}</span> now</>
+                      : (editingExpenseId ? 'Save changes' : 'Confirm Plan')}
+                  </button>
+                );
               })()}
             </div>
           </form>

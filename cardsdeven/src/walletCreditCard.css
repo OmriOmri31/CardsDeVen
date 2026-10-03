@@ -11,16 +11,16 @@
   flex-direction: column;
   width: 268px;
   min-height: 218px;
-  border-radius: 1rem;
+  border-radius: var(--cdv-r-md);
   font-size: 18px;
   color: #fff;
   background: var(--wcc-bg);
   box-shadow:
-    rgba(0, 0, 0, 0.4) 0 2px 2px,
-    rgba(0, 0, 0, 0.3) 0 7px 13px -3px,
-    rgba(0, 0, 0, 0.2) 0 -1px 0 inset;
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 10px 24px -10px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
   overflow: hidden;
-  font-family: 'Merta Sans', 'Abraham', ui-sans-serif, sans-serif;
+  font-family: 'Merta Sans', 'IBM Plex Mono', 'Abraham', ui-sans-serif, sans-serif;
   padding: 0.65em 0.85em 0.75em;
   box-sizing: border-box;
 }
@@ -136,12 +136,11 @@
 }
 
 .wallet-credit-card .wcc-expiry--soon .wcc-expiry-date {
-  color: #fdba74;
-  text-shadow: 0 0 12px rgba(251, 146, 60, 0.35);
+  color: #f3b26a;
 }
 
 .wallet-credit-card .wcc-expiry--soon .wcc-expiry-label {
-  color: #fed7aa;
+  color: #f3c89b;
   opacity: 0.95;
 }
 
@@ -157,14 +156,17 @@
 }
 
 .wallet-credit-card .wcc-original {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5em;
   font-size: 0.58em;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  opacity: 0.92;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
   line-height: 1.35;
   text-transform: uppercase;
   width: 100%;
-  padding-bottom: 0.15em;
+  padding-bottom: 0.25em;
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
 }
 

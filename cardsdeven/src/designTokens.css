@@ -1,0 +1,127 @@
+/*
+ * CardsDeVen design tokens.
+ *
+ * One accent only. Semantic colours (positive / warning / danger) stay reserved
+ * for money states so they never compete with the brand accent.
+ */
+
+:root {
+  /* Canvas & surfaces — warm neutral, never blue-grey */
+  --cdv-canvas: #f4f3f0;
+  --cdv-canvas-sunken: #eceae5;
+  --cdv-surface: #ffffff;
+  --cdv-surface-raised: #ffffff;
+  --cdv-surface-sunken: #f7f6f3;
+  --cdv-surface-inverse: #14171a;
+
+  /* Ink */
+  --cdv-ink: #14171a;
+  --cdv-ink-strong: #000000;
+  --cdv-body: #33383c;
+  --cdv-mute: #5d646a;
+  --cdv-faint: #8a9198;
+  --cdv-on-inverse: #f7f6f3;
+  --cdv-on-inverse-mute: rgba(247, 246, 243, 0.68);
+
+  /*
+   * Feature band. Light mode inverts to ink for contrast; dark mode only steps
+   * up a surface, because a near-white slab inside a dark page reads as a
+   * copy-paste accident rather than emphasis.
+   */
+  --cdv-band: #14171a;
+  --cdv-on-band: #f7f6f3;
+  --cdv-on-band-mute: rgba(247, 246, 243, 0.66);
+  --cdv-band-divider: rgba(255, 255, 255, 0.12);
+
+  /* Hairlines — elevation comes from these plus luminance, not drop shadows */
+  --cdv-hairline: rgba(20, 23, 26, 0.1);
+  --cdv-hairline-strong: rgba(20, 23, 26, 0.18);
+  --cdv-hairline-heavy: rgba(20, 23, 26, 0.32);
+
+  /* Single accent: deep jade. Reads financial, sits beside neutrals quietly. */
+  --cdv-accent: #176551;
+  --cdv-accent-hover: #11513f;
+  --cdv-accent-soft: rgba(23, 101, 81, 0.09);
+  --cdv-accent-border: rgba(23, 101, 81, 0.24);
+  --cdv-on-accent: #ffffff;
+
+  /* Money semantics */
+  --cdv-positive: #12795e;
+  --cdv-positive-soft: rgba(18, 121, 94, 0.1);
+  --cdv-warning: #a85c0b;
+  --cdv-warning-soft: rgba(168, 92, 11, 0.11);
+  --cdv-danger: #a8271f;
+  --cdv-danger-soft: rgba(168, 39, 31, 0.1);
+
+  /* Elevation — tinted, tight, single light source from above */
+  --cdv-shadow-sm: 0 1px 2px rgba(20, 23, 26, 0.05);
+  --cdv-shadow-md: 0 2px 4px rgba(20, 23, 26, 0.05), 0 6px 16px -6px rgba(20, 23, 26, 0.1);
+  --cdv-shadow-lg: 0 4px 8px rgba(20, 23, 26, 0.06), 0 18px 40px -12px rgba(20, 23, 26, 0.16);
+  --cdv-shadow-float: 0 8px 16px rgba(20, 23, 26, 0.08), 0 32px 64px -20px rgba(20, 23, 26, 0.24);
+
+  /* Radius */
+  --cdv-r-xs: 6px;
+  --cdv-r-sm: 10px;
+  --cdv-r-md: 14px;
+  --cdv-r-lg: 20px;
+  --cdv-r-xl: 28px;
+
+  /* Motion — one curve, used everywhere */
+  --cdv-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --cdv-fast: 140ms;
+  --cdv-base: 240ms;
+  --cdv-slow: 420ms;
+
+  /* Focus */
+  --cdv-focus-ring: 0 0 0 2px var(--cdv-canvas), 0 0 0 4px var(--cdv-accent);
+
+  color-scheme: light;
+}
+
+.dark {
+  --cdv-canvas: #0c0e0f;
+  --cdv-canvas-sunken: #070809;
+  --cdv-surface: #16191b;
+  --cdv-surface-raised: #1d2124;
+  --cdv-surface-sunken: #111416;
+  --cdv-surface-inverse: #f7f6f3;
+
+  --cdv-ink: #f2f1ee;
+  --cdv-ink-strong: #ffffff;
+  --cdv-body: #d3d2ce;
+  --cdv-mute: #9ba1a6;
+  --cdv-faint: #6d747a;
+  --cdv-on-inverse: #14171a;
+  --cdv-on-inverse-mute: rgba(20, 23, 26, 0.66);
+
+  --cdv-band: #1d2124;
+  --cdv-on-band: #f2f1ee;
+  --cdv-on-band-mute: rgba(242, 241, 238, 0.62);
+  --cdv-band-divider: rgba(255, 255, 255, 0.09);
+
+  --cdv-hairline: rgba(255, 255, 255, 0.1);
+  --cdv-hairline-strong: rgba(255, 255, 255, 0.17);
+  --cdv-hairline-heavy: rgba(255, 255, 255, 0.3);
+
+  --cdv-accent: #3fae8f;
+  --cdv-accent-hover: #55c0a2;
+  --cdv-accent-soft: rgba(63, 174, 143, 0.14);
+  --cdv-accent-border: rgba(63, 174, 143, 0.32);
+  --cdv-on-accent: #06211a;
+
+  --cdv-positive: #44b894;
+  --cdv-positive-soft: rgba(68, 184, 148, 0.14);
+  --cdv-warning: #e0973f;
+  --cdv-warning-soft: rgba(224, 151, 63, 0.14);
+  --cdv-danger: #e8716a;
+  --cdv-danger-soft: rgba(232, 113, 106, 0.14);
+
+  --cdv-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --cdv-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 6px 16px -6px rgba(0, 0, 0, 0.5);
+  --cdv-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.45), 0 18px 40px -12px rgba(0, 0, 0, 0.6);
+  --cdv-shadow-float: 0 8px 16px rgba(0, 0, 0, 0.5), 0 32px 64px -20px rgba(0, 0, 0, 0.7);
+
+  --cdv-focus-ring: 0 0 0 2px var(--cdv-canvas), 0 0 0 4px var(--cdv-accent);
+
+  color-scheme: dark;
+}

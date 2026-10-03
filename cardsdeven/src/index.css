@@ -28,7 +28,34 @@
 
 @layer base {
   html {
-    font-family: 'Merta Sans', 'Abraham', ui-sans-serif, system-ui, sans-serif;
+    /*
+     * IBM Plex Mono sits between the display face and the Hebrew face purely for
+     * per-glyph fallback: Merta Sans has no shekel sign (U+20AA), and Abraham's
+     * version clashes badly with Merta's numerals. Latin still resolves to Merta,
+     * Hebrew still resolves to Abraham.
+     */
+    font-family: 'Merta Sans', 'IBM Plex Mono', 'Abraham', ui-sans-serif, system-ui, sans-serif;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /*
+   * manipulation drops the 300ms double-tap-zoom delay on touch; the tap highlight
+   * is suppressed because every control already has its own :active treatment.
+   */
+  button,
+  a,
+  [role='button'],
+  label,
+  summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Lets App fill the viewport when Smart AI uses flex + 100dvh (h-full chain). */
@@ -42,5 +69,24 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+  }
+
+  ::selection {
+    background: var(--cdv-accent);
+    color: var(--cdv-on-accent);
+  }
+
+  /* Headings carry an anchor offset so the sticky top bar never covers them. */
+  h1,
+  h2,
+  h3 {
+    scroll-margin-top: 5rem;
+  }
+
+  /* Native controls need explicit colours or Windows dark mode inverts them. */
+  select,
+  option {
+    background-color: var(--cdv-surface);
+    color: var(--cdv-ink);
   }
 }

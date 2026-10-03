@@ -8,7 +8,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Merta Sans', 'Abraham', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['Merta Sans', 'IBM Plex Mono', 'Abraham', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'],
       },
     },
   },
