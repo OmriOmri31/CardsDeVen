@@ -1,37 +1,47 @@
 {
-  "last_updated": "2026-10-03 03:42:37",
+  "last_updated": "2026-10-04 18:58:14",
   "source_url": "https://online.dreamcard.co.il/public/deals",
   "deals": [
     {
-      "m": "FOX",
+      "m": "פוקס- חולצות קצרות בייסיק לנשים",
       "c": "DREAMCARD",
-      "d": "חולצות קצרות בייסיק נשים | ב- 59.90 ₪ 3",
+      "d": "פוקס- חולצות קצרות בייסיק לנשים 3 ב- 59.90 ש״ח",
       "url": "https://cli.re/5Kw9Em"
     },
     {
-      "m": "FOX HOME",
+      "m": "פוקס הום",
       "c": "DREAMCARD",
-      "d": "יום אחרון | 30% הנחה | בחנויות ובאתר"
+      "d": "פוקס הום - 30% הנחה"
     },
     {
-      "m": "AMERICAN EAGLE",
+      "m": "אמריקן איגל - עד",
       "c": "DREAMCARD",
-      "d": "SALE | עד- | 40% הנחה"
+      "d": "אמריקן איגל - עד 40% הנחה"
     },
     {
-      "m": "sunglass hut",
+      "m": "מבצע סאנגלאס האט: זוג ראשון",
       "c": "DREAMCARD",
-      "d": "זוג ראשון | 20% הנחה | זוג שני | 40% הנחה"
+      "d": "מבצע סאנגלאס האט: זוג ראשון 20% הנחה, זוג שני 40% הנחה"
     },
     {
-      "m": "MANGO",
+      "m": "בילבונג - קולקציית הקיץ",
       "c": "DREAMCARD",
-      "d": "יום אחרון | פריט שני ב- | 50% הנחה | על קולקציה חדשה"
+      "d": "בילבונג - קולקציית הקיץ"
     },
     {
-      "m": "FOX",
+      "m": "קוויקסילבר - קולקציית קיץ",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בלעדי ללקוחות | DREAMCARD VIP | 40% הנחה | על הקולקציה החדשה, בקנייה עד 1,000 ₪ | למימוש בחנויות ובאתר | FOX.CO.IL | קוד מימוש: HOLIDAY40",
+      "d": "קוויקסילבר - קולקציית קיץ"
+    },
+    {
+      "m": "LALINE Butter Better Cream",
+      "c": "DREAMCARD",
+      "d": "LALINE Butter Better Cream"
+    },
+    {
+      "m": "פוקס",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) פוקס - 40% הנחה על הקול החדשה VIP",
       "url": "https://cli.re/bj3Qe9"
     },
     {
@@ -103,20 +113,20 @@
       "url": "https://www.terminalx.com/dreamcard-terminalx/terminal-x-vip?&utm_source=dcvip&utm_medium=web&utm_campaign=holiday_dreams_060926"
     },
     {
-      "m": "LALINE",
+      "m": "ללין",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בלעדי ללקוחות | DREAMCARD VIP | 50% הנחה | על כל החנות, עד 2 פריטים לבחירה | למימוש בחנויות"
+      "d": "(DreamCard VIP) ללין - 50% הנחה על כל החנות, עד 2 פריטים לבחירה VIP"
     },
     {
-      "m": "Billabong",
+      "m": "בילבונג",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בלעדי ללקוחות DREAMCARD VIP | +20% הנחה נוספת | על מבצעי החנות | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: BILLASEP206",
+      "d": "(DreamCard VIP) בילבונג - 20% הנחה נוספת על מבצעי החנות VIP",
       "url": "https://www.terminalx.com/dreamcard-terminalx/vip-surf-brands?&utm_source=dcvip&utm_medium=web&utm_campaign=holiday_dreams_060926"
     },
     {
-      "m": "Quiksilver",
+      "m": "קוויק",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בלעדי ללקוחות DREAMCARD VIP | +20% הנחה נוספת | על מבצעי החנות | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: BILLASEP206"
+      "d": "(DreamCard VIP) קוויק - 20% הנחה נוספת על מבצעי החנות VIP"
     }
   ]
 }
