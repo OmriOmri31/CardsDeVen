@@ -19,6 +19,7 @@ import {
   describeCycle,
   getCycleSpec,
   isRecurringRule,
+  isUnitCard,
   recurringPresetId,
   remainingForPlan,
   specFromRecurringForm,
@@ -100,6 +101,29 @@ function formatDate(value, { withYear = true } = {}) {
 /** Tabular, shekel-capable numerals. The display face has no U+20AA glyph. */
 function Money({ value, className = '' }) {
   return <span className={`cdv-amount ${className}`}>{formatShekels(value)}</span>;
+}
+
+/** The label is whatever the user typed (`massages`, `flight ticket`). No plural guessing. */
+function formatUses(count, label) {
+  const n = Number(count);
+  const shown = Number.isFinite(n) ? Math.round(n) : 0;
+  const word = String(label || 'uses').trim() || 'uses';
+  return `${shown} ${word}`;
+}
+
+function isUseLedgerRow(expense, card) {
+  if (isUnitCard(card)) return true;
+  return expense?.units != null && expense.units !== '' && Number.isFinite(Number(expense.units));
+}
+
+function unitCardMatchesQuery(card, query) {
+  if (!isUnitCard(card) || !(Number(card.remaining) > 0)) return false;
+  const q = String(query || '').trim().toLowerCase();
+  if (q.length < 2) return false;
+  const hay = [card.name, card.unitLabel, card.venue].filter(Boolean).join('\n').toLowerCase();
+  if (hay.includes(q)) return true;
+  const words = q.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
+  return words.length > 0 && words.every((w) => hay.includes(w));
 }
 
 // --- DOMAIN KNOWLEDGE: CATEGORIES & ICONS ---
@@ -735,16 +759,17 @@ const cardMatchesExpenseSelection = (card, categories, merchants) => {
 };
 
 function pickExpenseCardId(cardBalances, categories, merchants, previousCardId, anchorCardId) {
+  const moneyCards = cardBalances.filter((c) => !isUnitCard(c));
   if (!categories || categories.length === 0) {
     for (const id of [previousCardId, anchorCardId]) {
       if (!id) continue;
-      if (cardBalances.some((c) => c.id === id)) return id;
+      if (moneyCards.some((c) => c.id === id)) return id;
     }
     return '';
   }
   for (const id of [previousCardId, anchorCardId]) {
     if (!id) continue;
-    const card = cardBalances.find((c) => c.id === id);
+    const card = moneyCards.find((c) => c.id === id);
     if (card && cardMatchesExpenseSelection(card, categories, merchants)) return id;
   }
   return '';
@@ -1079,7 +1104,8 @@ function normalizeCardLink(raw) {
   }
 }
 
-function WalletCreditPlastic({ balanceRemaining, balanceLimit, limitCaption = 'Loaded', programName, chromeGradient, ruleType, expiryDate, isExpiringSoon }) {
+function WalletCreditPlastic({ balanceRemaining, balanceLimit, limitCaption = 'Loaded', programName, chromeGradient, ruleType, expiryDate, isExpiringSoon, valueKind = 'money', unitLabel = '' }) {
+  const units = valueKind === 'units';
   const showExpiry = ruleType === 'expires' && expiryDate;
   return (
     <div className="wallet-credit-card-wrap wallet-credit-card-wrap--lg-scale">
@@ -1102,10 +1128,17 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, limitCaption = 'L
           </div>
         ) : null}
         <div className="wcc-amounts">
-          <div className="wcc-original">{limitCaption} <span className="cdv-amount">{formatShekels(balanceLimit)}</span></div>
+          <div className="wcc-original">{limitCaption} <span className="cdv-amount">{units ? formatUses(balanceLimit, unitLabel) : formatShekels(balanceLimit)}</span></div>
           <div className="wcc-current-block">
             <span className="wcc-current-label">Remaining</span>
-            <div className="wcc-current cdv-amount">{formatShekels(balanceRemaining)}</div>
+            {units ? (
+              <>
+                <div className="wcc-current cdv-amount">{Number.isFinite(Number(balanceRemaining)) ? Math.round(Number(balanceRemaining)) : 0}</div>
+                <div className="wcc-unit-label">{unitLabel || 'uses'}</div>
+              </>
+            ) : (
+              <div className="wcc-current cdv-amount">{formatShekels(balanceRemaining)}</div>
+            )}
           </div>
         </div>
       </div>
@@ -1214,6 +1247,10 @@ const BALANCE_BEHAVIORS = [
 const EMPTY_CARD_FORM = {
   name: '',
   balance: '',
+  valueKind: 'money',
+  unitCount: '',
+  unitLabel: '',
+  venue: '',
   programId: 'CUSTOM',
   ruleType: 'permanent',
   recurringPreset: 'monthly',
@@ -1224,6 +1261,19 @@ const EMPTY_CARD_FORM = {
   categories: [],
   plasticAccentHex: '',
   cardLink: '',
+};
+
+const EMPTY_EXPENSE_FORM = {
+  name: '',
+  amount: '',
+  units: '',
+  expenseCategories: [],
+  expenseMerchants: [],
+  cardId: '',
+  isCompleted: false,
+  isManualSplit: false,
+  chargeAmount: '',
+  scheduledFor: '',
 };
 
 function planDateFromInput(scheduledFor) {
@@ -1246,6 +1296,17 @@ function recurringStatusLine(card, asOf = new Date()) {
 }
 
 function walletLineForAdvisor(card) {
+  if (isUnitCard(card)) {
+    const left = formatUses(card.remaining, card.unitLabel);
+    const loaded = formatUses(card.loaded ?? card.unitCount, card.unitLabel);
+    const place = card.venue ? ` at ${card.venue}` : '';
+    let line = `${card.name}: ${left} left of ${loaded}${place}. NOT MONEY — redeem only as ${card.unitLabel || 'uses'}${place}.`;
+    if (card.balanceOverride) {
+      const when = formatDate(card.balanceOverride.at);
+      line += ` [USES LEFT were set on ${when} to ${formatUses(card.balanceOverride.amount, card.unitLabel)}. Uses before that moment are already included. Later uses reduce this figure.]`;
+    }
+    return line;
+  }
   const spec = getCycleSpec(card);
   const remaining = Number(card.remaining);
   let line;
@@ -1270,6 +1331,7 @@ function walletLineForAdvisor(card) {
 function balanceSetLine(card) {
   if (!card.balanceOverride) return '';
   const when = formatDate(card.balanceOverride.at);
+  if (isUnitCard(card)) return `Uses left set ${when}. Plans from before that moment are already included.`;
   const resumes = getCycleSpec(card) ? ' The normal refill takes over again at the next reset.' : '';
   return `Balance set ${when}. Plans from before that moment are already included.${resumes}`;
 }
@@ -1374,7 +1436,8 @@ export default function App() {
   const [newCard, setNewCard] = useState(EMPTY_CARD_FORM);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [newExpense, setNewExpense] = useState({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+  const [expenseValueKind, setExpenseValueKind] = useState('money');
+  const [newExpense, setNewExpense] = useState(EMPTY_EXPENSE_FORM);
   const [merchantSearch, setMerchantSearch] = useState('');
   const [showMerchantSuggestions, setShowMerchantSuggestions] = useState(false);
   const [insightSearch, setInsightSearch] = useState('');
@@ -1573,15 +1636,23 @@ export default function App() {
     return aDays - bDays;
   }), [cardBalances]);
 
-  const totalLoadedBalance = useMemo(() => cardBalances.reduce((sum, card) => sum + (Number(card.loaded) || 0), 0), [cardBalances]);
-  const totalRemainingBalance = useMemo(() => cardBalances.reduce((sum, card) => sum + card.remaining, 0), [cardBalances]);
-  const totalPlannedExpenses = useMemo(() => expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0), [expenses]);
+  const moneyCardBalances = useMemo(() => cardBalances.filter((c) => !isUnitCard(c)), [cardBalances]);
+  const unitCardBalances = useMemo(() => cardBalances.filter((c) => isUnitCard(c)), [cardBalances]);
+  const totalLoadedBalance = useMemo(() => moneyCardBalances.reduce((sum, card) => sum + (Number(card.loaded) || 0), 0), [moneyCardBalances]);
+  const totalRemainingBalance = useMemo(() => moneyCardBalances.reduce((sum, card) => sum + card.remaining, 0), [moneyCardBalances]);
+  const totalPlannedExpenses = useMemo(() => {
+    const unitIds = new Set(cards.filter((c) => isUnitCard(c)).map((c) => c.id));
+    return expenses.reduce((sum, e) => {
+      if (unitIds.has(e.cardId) || (e.units != null && e.units !== '')) return sum;
+      return sum + parseFloat(e.amount || 0);
+    }, 0);
+  }, [expenses, cards]);
   const expiringAlerts = useMemo(() => cardBalances.filter((c) => c.ruleType === 'expires' && c.remaining > 0 && getDaysUntilExpiry(c.expiryDate) <= 30).sort((a, b) => getDaysUntilExpiry(a.expiryDate) - getDaysUntilExpiry(b.expiryDate)), [cardBalances]);
 
   const fundsByCategory = useMemo(() => {
     const grouped = {};
     CATEGORIES.forEach((cat) => { grouped[cat] = { total: 0, sources: [] }; });
-    cardBalances.forEach((card) => {
+    moneyCardBalances.forEach((card) => {
       if (card.remaining > 0) {
         card.derivedCats.forEach((cat) => {
           if (!grouped[cat]) grouped[cat] = { total: 0, sources: [] };
@@ -1591,7 +1662,7 @@ export default function App() {
       }
     });
     return Object.entries(grouped).filter(([_, data]) => data.total > 0).sort((a, b) => b[1].total - a[1].total);
-  }, [cardBalances]);
+  }, [moneyCardBalances]);
 
   const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)), [expenses]);
 
@@ -1636,7 +1707,12 @@ export default function App() {
     const futurePlansSummary = expenses
       .filter((e) => e.scheduledFor && new Date(e.scheduledFor) > new Date())
       .slice(0, 12)
-      .map((e) => `${e.name}:₪${e.amount} on ${e.scheduledFor}${e.cardId ? ` (card ${cards.find((c) => c.id === e.cardId)?.name || e.cardId})` : ''}`)
+      .map((e) => {
+        const card = cards.find((c) => c.id === e.cardId);
+        const cardBit = card ? ` (card ${card.name})` : (e.cardId ? ` (card ${e.cardId})` : '');
+        if (isUseLedgerRow(e, card)) return `${e.name}: ${formatUses(e.units, card?.unitLabel || e.unitLabel)} on ${e.scheduledFor}${cardBit}`;
+        return `${e.name}:₪${e.amount} on ${e.scheduledFor}${cardBit}`;
+      })
       .join(' | ') || 'None';
     const systemInstruction = `You are a sharp, witty, and highly practical Israeli shopping assistant.
 Your goal is to save the user money by cross-referencing what they want to buy with their specific digital wallet balances and active discount clubs.
@@ -1653,6 +1729,7 @@ USER'S DATA:
 ### RECURRING BALANCES & FUTURE PLANNING:
 - MONTHLY cards refill to their full grant on the 1st of each calendar month. Only expenses in that same month reduce that month's balance. Unused money does not carry over.
 - CYCLE cards add their grant on a schedule (for example every 3 months). Grants stack until a reset (for example once a year), when the balance returns to zero and the schedule starts again. Only expenses inside the current reset window reduce the balance. "Available now" includes only grants that have already landed. Do not treat the full cycle cap as spendable today.
+- EXPERIENCE cards are marked NOT MONEY. Their numbers are uses of one thing, often at one place (massages, a flight, smoothies). Never treat that count as shekels, never use one to pay a store bill, and mention it only when the user is asking about that thing or that place.
 - If the user plans a purchase for a future date, use the balance as of that date. Monthly cards are full again after the 1st. Cycle cards include every grant that will have arrived by then, minus other plans in the same reset window.
 - Mention split payment at checkout when a single card cannot cover the full amount but another card or cash can cover the gap.
 
@@ -1713,7 +1790,8 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   const resetCardForm = () => { setNewCard(EMPTY_CARD_FORM); setEditingCardId(null); setShowCardForm(false); };
   const resetExpenseForm = () => {
     quickSpendAnchorCardIdRef.current = null;
-    setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId: '', isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+    setExpenseValueKind('money');
+    setNewExpense(EMPTY_EXPENSE_FORM);
     setMerchantSearch('');
     setEditingExpenseId(null);
     setShowExpenseForm(false);
@@ -1721,45 +1799,99 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   const handleSaveCard = async (e) => {
     e.preventDefault();
-    if (!user || !newCard.name || !newCard.balance) return;
-    const program = PROGRAMS[newCard.programId];
-    let ruleType = newCard.ruleType;
-    let cycleFields = null;
-    if (isRecurringRule(newCard.ruleType)) {
-      const spec = specFromRecurringForm(newCard);
-      if (spec?.error) {
-        showToastMsg(spec.error, 'error');
+    if (!user || !String(newCard.name || '').trim()) return;
+    const isUnits = newCard.valueKind === 'units';
+
+    const applyChrome = (cardData) => {
+      const hexRaw = (newCard.plasticAccentHex || '').trim();
+      const normalizedHex = hexRaw.startsWith('#') ? hexRaw : (hexRaw ? `#${hexRaw}` : '');
+      if (hexToRgb(normalizedHex)) cardData.plasticAccentHex = normalizedHex;
+      else if (editingCardId) cardData.plasticAccentHex = deleteField();
+      const cardLink = normalizeCardLink(newCard.cardLink);
+      if (cardLink) cardData.cardLink = cardLink;
+      else if (editingCardId) cardData.cardLink = deleteField();
+    };
+
+    let cardData;
+    if (isUnits) {
+      const count = Number(newCard.unitCount);
+      const label = String(newCard.unitLabel || '').trim();
+      const venue = String(newCard.venue || '').trim();
+      if (!Number.isInteger(count) || count < 1 || !label) {
+        showToastMsg('Enter how many, and what each one is.', 'error');
         return;
       }
-      if (spec && spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
-        ruleType = 'monthly';
-      } else if (spec) {
-        ruleType = 'cycle';
-        cycleFields = {
-          refillEveryMonths: spec.refillEveryMonths,
-          resetEveryMonths: spec.resetEveryMonths,
-          cycleStartMonth: spec.cycleStartMonth,
-        };
+      const ruleType = newCard.ruleType === 'expires' ? 'expires' : 'permanent';
+      if (ruleType === 'expires' && !newCard.expiryDate) {
+        showToastMsg('Pick the date this expires.', 'error');
+        return;
+      }
+      cardData = {
+        name: String(newCard.name).trim(),
+        valueKind: 'units',
+        unitCount: count,
+        unitLabel: label,
+        programId: 'CUSTOM',
+        ruleType,
+        expiryDate: ruleType === 'expires' ? newCard.expiryDate : '',
+        categories: [],
+        color: PROGRAMS.CUSTOM.color,
+        updatedAt: new Date().toISOString(),
+      };
+      if (venue) cardData.venue = venue;
+      else if (editingCardId) cardData.venue = deleteField();
+      if (editingCardId) {
+        cardData.balance = deleteField();
+        cardData.refillEveryMonths = deleteField();
+        cardData.resetEveryMonths = deleteField();
+        cardData.cycleStartMonth = deleteField();
+      }
+    } else {
+      if (!newCard.balance) return;
+      const program = PROGRAMS[newCard.programId];
+      let ruleType = newCard.ruleType;
+      let cycleFields = null;
+      if (isRecurringRule(newCard.ruleType)) {
+        const spec = specFromRecurringForm(newCard);
+        if (spec?.error) {
+          showToastMsg(spec.error, 'error');
+          return;
+        }
+        if (spec && spec.refillEveryMonths === 1 && spec.resetEveryMonths === 1) {
+          ruleType = 'monthly';
+        } else if (spec) {
+          ruleType = 'cycle';
+          cycleFields = {
+            refillEveryMonths: spec.refillEveryMonths,
+            resetEveryMonths: spec.resetEveryMonths,
+            cycleStartMonth: spec.cycleStartMonth,
+          };
+        }
+      }
+      cardData = {
+        name: String(newCard.name).trim(),
+        balance: parseFloat(newCard.balance),
+        programId: newCard.programId,
+        ruleType,
+        expiryDate: ruleType === 'expires' ? newCard.expiryDate : '',
+        categories: newCard.programId === 'CUSTOM' ? newCard.categories : [],
+        color: program.color,
+        updatedAt: new Date().toISOString(),
+      };
+      if (cycleFields) Object.assign(cardData, cycleFields);
+      else if (editingCardId) {
+        cardData.refillEveryMonths = deleteField();
+        cardData.resetEveryMonths = deleteField();
+        cardData.cycleStartMonth = deleteField();
+      }
+      if (editingCardId) {
+        cardData.valueKind = deleteField();
+        cardData.unitCount = deleteField();
+        cardData.unitLabel = deleteField();
+        cardData.venue = deleteField();
       }
     }
-    const cardData = {
-      name: newCard.name, balance: parseFloat(newCard.balance), programId: newCard.programId,
-      ruleType, expiryDate: ruleType === 'expires' ? newCard.expiryDate : '',
-      categories: newCard.programId === 'CUSTOM' ? newCard.categories : [], color: program.color, updatedAt: new Date().toISOString()
-    };
-    if (cycleFields) Object.assign(cardData, cycleFields);
-    else if (editingCardId) {
-      cardData.refillEveryMonths = deleteField();
-      cardData.resetEveryMonths = deleteField();
-      cardData.cycleStartMonth = deleteField();
-    }
-    const hexRaw = (newCard.plasticAccentHex || '').trim();
-    const normalizedHex = hexRaw.startsWith('#') ? hexRaw : (hexRaw ? `#${hexRaw}` : '');
-    if (hexToRgb(normalizedHex)) cardData.plasticAccentHex = normalizedHex;
-    else if (editingCardId) cardData.plasticAccentHex = deleteField();
-    const cardLink = normalizeCardLink(newCard.cardLink);
-    if (cardLink) cardData.cardLink = cardLink;
-    else if (editingCardId) cardData.cardLink = deleteField();
+    applyChrome(cardData);
     if (editingCardId) await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), editingCardId), cardData);
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'cards')), cardData);
     showToastMsg(editingCardId ? 'Card updated' : 'Card added to wallet');
@@ -1775,37 +1907,88 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   const handleSetBalance = async (e) => {
     e.preventDefault();
     if (!user || !balanceEditCardId) return;
+    const target = cardBalances.find((c) => c.id === balanceEditCardId);
+    const units = isUnitCard(target);
     const amount = Number(balanceEditValue);
-    if (!Number.isFinite(amount) || amount < 0) {
+    if (units) {
+      if (!Number.isInteger(amount) || amount < 0) {
+        showToastMsg('Enter a whole number of uses left.', 'error');
+        return;
+      }
+    } else if (!Number.isFinite(amount) || amount < 0) {
       showToastMsg('Enter the balance that is on the card right now.', 'error');
       return;
     }
     await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), balanceEditCardId), {
-      balanceSetTo: Math.round(amount * 100) / 100,
+      balanceSetTo: units ? amount : Math.round(amount * 100) / 100,
       balanceSetAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    showToastMsg('Balance updated');
+    showToastMsg(units ? 'Uses updated' : 'Balance updated');
     setBalanceEditCardId(null);
   };
 
   const handleClearSetBalance = async () => {
     if (!user || !balanceEditCardId) return;
+    const target = cardBalances.find((c) => c.id === balanceEditCardId);
     await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), balanceEditCardId), {
       balanceSetTo: deleteField(),
       balanceSetAt: deleteField(),
       updatedAt: new Date().toISOString(),
     });
-    showToastMsg('Back to the tracked balance');
+    showToastMsg(isUnitCard(target) ? 'Back to the tracked count' : 'Back to the tracked balance');
     setBalanceEditCardId(null);
   };
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
-    if (!user || !newExpense.name || !newExpense.amount || !newExpense.expenseCategories?.length || !newExpense.cardId) return;
-    const reqAmount = parseFloat(newExpense.amount);
+    if (!user || !newExpense.name || !newExpense.cardId) return;
     const selectedCard = cardBalances.find((c) => c.id === newExpense.cardId);
     const planningAsOf = planDateFromInput(newExpense.scheduledFor);
+    const editingRow = editingExpenseId ? expenses.find((ex) => ex.id === editingExpenseId) : null;
+
+    if (expenseValueKind === 'units' || isUnitCard(selectedCard)) {
+      const uses = Number(newExpense.units);
+      if (!Number.isInteger(uses) || uses < 1) {
+        showToastMsg('Enter how many to use.', 'error');
+        return;
+      }
+      if (!selectedCard || !isUnitCard(selectedCard)) {
+        showToastMsg('Pick an experience card.', 'error');
+        return;
+      }
+      const left = getRemainingForCardAt(selectedCard, planningAsOf, editingRow);
+      if (uses > left) {
+        showToastMsg(left > 0 ? `Only ${formatUses(left, selectedCard.unitLabel)} left.` : 'Nothing left on this card.', 'error');
+        return;
+      }
+      const venue = String(selectedCard.venue || '').trim();
+      const expenseData = {
+        name: newExpense.name,
+        units: uses,
+        unitLabel: selectedCard.unitLabel || '',
+        category: '',
+        merchantName: venue,
+        expenseCategories: [],
+        expenseMerchants: venue ? [venue] : [],
+        cardId: newExpense.cardId,
+        isCompleted: newExpense.isCompleted || false,
+        scheduledFor: newExpense.scheduledFor ? new Date(`${newExpense.scheduledFor}T12:00:00`).toISOString() : null,
+        updatedAt: editingExpenseId ? (newExpense.updatedAt || new Date().toISOString()) : new Date().toISOString(),
+      };
+      if (editingExpenseId) {
+        expenseData.amount = deleteField();
+        await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), editingExpenseId), expenseData);
+      } else {
+        await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'expenses')), expenseData);
+      }
+      showToastMsg(editingExpenseId ? 'Update saved' : 'Use logged');
+      resetExpenseForm();
+      return;
+    }
+
+    if (!newExpense.amount || !newExpense.expenseCategories?.length) return;
+    const reqAmount = parseFloat(newExpense.amount);
     const planningRemaining = selectedCard
       ? getRemainingForCardAt(selectedCard, planningAsOf)
       : 0;
@@ -1866,12 +2049,19 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
   const startEditCard = (card) => {
     const preset = recurringPresetId(card) || 'monthly';
+    const units = isUnitCard(card);
     setNewCard({
       ...EMPTY_CARD_FORM,
       ...card,
       balance: card.balance != null ? String(card.balance) : '',
+      valueKind: units ? 'units' : 'money',
+      unitCount: card.unitCount != null ? String(card.unitCount) : '',
+      unitLabel: card.unitLabel || '',
+      venue: card.venue || '',
       programId: card.programId || 'CUSTOM',
-      ruleType: isRecurringRule(card.ruleType) ? card.ruleType : (card.ruleType || 'permanent'),
+      ruleType: units
+        ? (card.ruleType === 'expires' ? 'expires' : 'permanent')
+        : (isRecurringRule(card.ruleType) ? card.ruleType : (card.ruleType || 'permanent')),
       recurringPreset: isRecurringRule(card.ruleType) ? preset : 'monthly',
       refillEveryMonths: card.refillEveryMonths ?? 3,
       resetEveryMonths: card.resetEveryMonths ?? 12,
@@ -1886,13 +2076,17 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   };
   const startEditExpense = (expense) => {
     quickSpendAnchorCardIdRef.current = null;
+    const card = cardBalances.find((c) => c.id === expense.cardId);
+    const unitsMode = isUseLedgerRow(expense, card);
     const expenseCategories = expenseCategoriesForDisplay(expense);
     const expenseMerchants = expenseMerchantsForDisplay(expense);
+    setExpenseValueKind(unitsMode ? 'units' : 'money');
     setNewExpense({
       ...expense,
       expenseCategories,
       expenseMerchants,
       amount: expense.amount != null ? String(expense.amount) : '',
+      units: expense.units != null ? String(expense.units) : (unitsMode ? '1' : ''),
       scheduledFor: toScheduledForInputValue(expense.scheduledFor),
       isManualSplit: false,
       chargeAmount: '',
@@ -1902,8 +2096,16 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     setShowExpenseForm(true);
   };
   const startQuickExpense = (cardId) => {
-    quickSpendAnchorCardIdRef.current = cardId;
-    setNewExpense({ name: '', amount: '', expenseCategories: [], expenseMerchants: [], cardId, isCompleted: false, isManualSplit: false, chargeAmount: '', scheduledFor: '' });
+    const card = cardBalances.find((c) => c.id === cardId);
+    const unitsMode = isUnitCard(card);
+    quickSpendAnchorCardIdRef.current = unitsMode ? null : cardId;
+    setExpenseValueKind(unitsMode ? 'units' : 'money');
+    setNewExpense({
+      ...EMPTY_EXPENSE_FORM,
+      name: unitsMode ? (card.unitLabel || card.name || '') : '',
+      units: unitsMode ? '1' : '',
+      cardId,
+    });
     setMerchantSearch('');
     setEditingExpenseId(null);
     setShowExpenseForm(true);
@@ -2127,7 +2329,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       <li key={card.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
                         <span className="font-medium text-[var(--cdv-ink)] truncate min-w-0">{card.name}</span>
                         <span className="flex shrink-0 items-baseline gap-3">
-                          <Money value={card.remaining} className="font-semibold text-[var(--cdv-ink)]" />
+                          {isUnitCard(card)
+                            ? <span className="font-semibold text-[var(--cdv-ink)]">{formatUses(card.remaining, card.unitLabel)}</span>
+                            : <Money value={card.remaining} className="font-semibold text-[var(--cdv-ink)]" />}
                           <span className="cdv-badge cdv-badge--warning">{getDaysUntilExpiry(card.expiryDate)} days left</span>
                         </span>
                       </li>
@@ -2142,7 +2346,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Total portfolio</p>
                     <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-on-band)]">{formatShekels(totalLoadedBalance)}</p>
                     <p className="mt-2 text-sm text-[var(--cdv-on-band-mute)]">
-                      Loaded across {cards.length} {cards.length === 1 ? 'card' : 'cards'}
+                      {unitCardBalances.length > 0
+                        ? <>Loaded across {moneyCardBalances.length} money {moneyCardBalances.length === 1 ? 'card' : 'cards'}. {unitCardBalances.length} experience {unitCardBalances.length === 1 ? 'card is' : 'cards are'} tracked separately.</>
+                        : <>Loaded across {cards.length} {cards.length === 1 ? 'card' : 'cards'}</>}
                     </p>
                   </div>
                   <div className="p-7 sm:p-9">
@@ -2209,7 +2415,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 <div className="cdv-panel--empty px-6 py-16 text-center">
                   <CreditCard size={30} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
                   <h3 className="cdv-display text-lg">Your wallet is empty</h3>
-                  <p className="mx-auto mt-2 max-w-sm text-sm text-[var(--cdv-mute)]">Add a gift card, Cibus balance or benefit grant and CardsDeVen starts matching it to deals.</p>
+                  <p className="mx-auto mt-2 max-w-sm text-sm text-[var(--cdv-mute)]">Add a gift card, a pack of uses, or a benefit grant and CardsDeVen starts matching it to deals.</p>
                   <button type="button" onClick={() => { resetCardForm(); setShowCardForm(true); }} className="cdv-btn cdv-btn--primary mt-6">
                     <Plus size={17} aria-hidden /> Add your first card
                   </button>
@@ -2217,6 +2423,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                   {cardBalances.map((card) => {
+                    const units = isUnitCard(card);
                     const ruleData = RULE_TYPES[card.ruleType?.toUpperCase()] || RULE_TYPES.PERMANENT;
                     const progData = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
                     const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
@@ -2226,6 +2433,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     const cardBalanceUrl = normalizeCardLink(card.cardLink);
                     const behaviorLabel = cycleBadgeLabel(card);
                     const scheduleLine = recurringStatusLine(card);
+                    const placeLabel = units ? (card.venue || 'Uses') : progData.name;
                     return (
                       <article
                         key={card.id}
@@ -2236,12 +2444,14 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                           <WalletCreditPlastic
                             balanceRemaining={card.remaining}
                             balanceLimit={pool}
-                            limitCaption={card.balanceOverride ? 'Current' : (card.ruleType === 'cycle' ? 'This cycle' : 'Loaded')}
-                            programName={progData.name}
+                            limitCaption={card.balanceOverride ? 'Current' : (units ? 'Loaded' : (card.ruleType === 'cycle' ? 'This cycle' : 'Loaded'))}
+                            programName={placeLabel}
                             chromeGradient={chromeGradient}
                             ruleType={card.ruleType}
                             expiryDate={card.expiryDate}
                             isExpiringSoon={isExpiringSoon}
+                            valueKind={units ? 'units' : 'money'}
+                            unitLabel={card.unitLabel}
                           />
                           <div className="flex min-h-full flex-1 min-w-0 flex-col gap-4">
                             <div className="flex items-start justify-between gap-3">
@@ -2256,7 +2466,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                         : `Expires ${formatDate(card.expiryDate)}`)
                                       : (behaviorLabel || ruleData.label)}
                                   </span>
-                                  <span className="cdv-badge cdv-badge--neutral">{progData.name}</span>
+                                  <span className="cdv-badge cdv-badge--neutral">{placeLabel}</span>
                                 </div>
                               </div>
                               <div className="flex shrink-0 items-center gap-0.5">
@@ -2267,13 +2477,15 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
                             <div>
                               <div className="mb-2 flex items-baseline justify-between gap-3">
-                                <Money value={card.remaining} className="text-lg font-semibold text-[var(--cdv-ink)]" />
-                                <span className="cdv-amount text-xs text-[var(--cdv-faint)]">of {formatShekels(pool)}</span>
+                                {units
+                                  ? <span className="text-lg font-semibold text-[var(--cdv-ink)]">{formatUses(card.remaining, card.unitLabel)}</span>
+                                  : <Money value={card.remaining} className="text-lg font-semibold text-[var(--cdv-ink)]" />}
+                                <span className="text-xs text-[var(--cdv-faint)]">of {units ? formatUses(pool, card.unitLabel) : formatShekels(pool)}</span>
                               </div>
                               <div
                                 className="cdv-meter"
                                 role="progressbar"
-                                aria-label={`${card.name} balance remaining`}
+                                aria-label={units ? `${card.name}: ${formatUses(card.remaining, card.unitLabel)} remaining` : `${card.name} balance remaining`}
                                 aria-valuenow={Math.round(percentRemaining)}
                                 aria-valuemin={0}
                                 aria-valuemax={100}
@@ -2287,10 +2499,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             <div className="flex flex-wrap gap-2">
                               <button type="button" onClick={() => startQuickExpense(card.id)} className="cdv-btn cdv-btn--primary">
                                 <Zap size={16} className="shrink-0" aria-hidden />
-                                Quick spend
+                                {units ? 'Log a use' : 'Quick spend'}
                               </button>
                               <button type="button" onClick={() => startSetBalance(card)} className="cdv-btn cdv-btn--outline">
-                                Set balance
+                                {units ? 'Set remaining' : 'Set balance'}
                               </button>
                               {cardBalanceUrl ? (
                                 <a href={cardBalanceUrl} target="_blank" rel="noopener noreferrer" className="cdv-btn cdv-btn--outline">
@@ -2301,13 +2513,19 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             </div>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-1.5 border-t border-[var(--cdv-hairline)] pt-4">
-                          {card.derivedCats.map((cat) => (
-                            <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
-                              <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
-                            </span>
-                          ))}
-                        </div>
+                        {units ? (
+                          <p className="border-t border-[var(--cdv-hairline)] pt-4 text-sm text-[var(--cdv-mute)]">
+                            Redeem as {card.unitLabel || 'uses'}{card.venue ? ` at ${card.venue}` : ''}.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5 border-t border-[var(--cdv-hairline)] pt-4">
+                            {card.derivedCats.map((cat) => (
+                              <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
+                                <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </article>
                     );
                   })}
@@ -2347,6 +2565,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   <ul className="cdv-divide">
                     {sortedExpenses.map((expense) => {
                       const sourceCard = cards.find((c) => c.id === expense.cardId);
+                      const useRow = isUseLedgerRow(expense, sourceCard);
                       const scheduled = expense.scheduledFor ? new Date(expense.scheduledFor) : null;
                       const isFuture = scheduled ? scheduled > new Date() : false;
                       const merchants = expenseMerchantsForDisplay(expense);
@@ -2359,7 +2578,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             className="cdv-icon-btn shrink-0"
                             style={expense.isCompleted ? { color: 'var(--cdv-positive)', background: 'var(--cdv-positive-soft)' } : undefined}
                             aria-pressed={!!expense.isCompleted}
-                            aria-label={expense.isCompleted ? `Mark ${expense.name} as not yet spent` : `Mark ${expense.name} as spent`}
+                            aria-label={expense.isCompleted
+                              ? `Mark ${expense.name} as not yet ${useRow ? 'used' : 'spent'}`
+                              : `Mark ${expense.name} as ${useRow ? 'used' : 'spent'}`}
                           >
                             {expense.isCompleted ? <CheckSquare size={17} aria-hidden /> : <Square size={17} aria-hidden />}
                           </button>
@@ -2369,7 +2590,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                               <p className={`font-semibold min-w-0 break-words ${expense.isCompleted ? 'text-[var(--cdv-mute)] line-through decoration-[var(--cdv-hairline-heavy)]' : 'text-[var(--cdv-ink)]'}`}>
                                 {expense.name}
                               </p>
-                              {expense.isCompleted && <span className="cdv-badge cdv-badge--positive">Spent</span>}
+                              {expense.isCompleted && <span className="cdv-badge cdv-badge--positive">{useRow ? 'Used' : 'Spent'}</span>}
                               {scheduled && (
                                 <span className={`cdv-badge ${isFuture ? 'cdv-badge--accent' : 'cdv-badge--neutral'}`}>
                                   {formatDate(scheduled)}
@@ -2383,7 +2604,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                     <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
                                   </span>
                                 ))
-                                : <span>—</span>}
+                                : <span>{useRow ? (sourceCard?.unitLabel || expense.unitLabel || 'Use') : '—'}</span>}
                               <span aria-hidden className="text-[var(--cdv-faint)]">•</span>
                               <span className="min-w-0 truncate font-medium text-[var(--cdv-body)]">{sourceCard?.name || 'Deleted card'}</span>
                               {merchants.map((m) => (
@@ -2396,7 +2617,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                           </div>
 
                           <div className="flex shrink-0 items-center gap-3">
-                            <Money value={parseFloat(expense.amount)} className={`text-base font-semibold ${expense.isCompleted ? 'text-[var(--cdv-positive)]' : 'text-[var(--cdv-ink)]'}`} />
+                            {useRow
+                              ? <span className={`text-base font-semibold ${expense.isCompleted ? 'text-[var(--cdv-positive)]' : 'text-[var(--cdv-ink)]'}`}>{formatUses(expense.units, sourceCard?.unitLabel || expense.unitLabel)}</span>
+                              : <Money value={parseFloat(expense.amount)} className={`text-base font-semibold ${expense.isCompleted ? 'text-[var(--cdv-positive)]' : 'text-[var(--cdv-ink)]'}`} />}
                             <div className="flex gap-0.5 transition-opacity duration-150 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                               <button type="button" onClick={() => startEditExpense(expense)} className="cdv-icon-btn" aria-label={`Edit ${expense.name}`}><Edit2 size={16} aria-hidden /></button>
                               <button type="button" onClick={() => deleteExpense(expense.id)} className="cdv-icon-btn cdv-icon-btn--danger" aria-label={`Delete ${expense.name}`}><Trash2 size={16} aria-hidden /></button>
@@ -2449,7 +2672,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                         );
                       }
                       return matches.map(([searchMatch, mData]) => {
-                        const acceptedCards = sortedCardBalances.filter((c) => checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
+                        const acceptedCards = sortedCardBalances.filter((c) => !isUnitCard(c) && checkCompatibility(c, mData.cat, searchMatch).allowed && c.remaining > 0);
                         const merchantDeals = discountsData.filter(
                           (d) => userClubs.includes(d.c) && dealMatchesInsightMerchant(d, searchMatch, insightSearch)
                         );
@@ -2516,6 +2739,23 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                         );
                       });
                     })()}
+                    {(() => {
+                      const redeemCards = sortedCardBalances.filter((c) => unitCardMatchesQuery(c, insightSearch));
+                      if (redeemCards.length === 0) return null;
+                      return (
+                        <article className="rounded-[var(--cdv-r-lg)] border border-white/15 bg-white/[0.07] p-5">
+                          <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)] mb-3">You can redeem</p>
+                          <ul className="space-y-2">
+                            {redeemCards.map((c) => (
+                              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-2 text-sm text-[var(--cdv-on-band)]">
+                                <span className="font-medium">{c.name}</span>
+                                <span>{formatUses(c.remaining, c.unitLabel)}{c.venue ? ` at ${c.venue}` : ''}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                      );
+                    })()}
                   </div>
                 )}
               </section>
@@ -2526,14 +2766,14 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     <h3 id="cdv-coverage-heading" className="font-semibold text-[var(--cdv-ink)]">Category coverage</h3>
                     <p className="mt-1 max-w-2xl text-sm text-[var(--cdv-mute)]">
                       Which of your cards can pay in each category.
-                      {cardBalances.length > 5 && <span className="hidden sm:inline"> Scroll sideways for the rest of your cards.</span>}
+                      {moneyCardBalances.length > 5 && <span className="hidden sm:inline"> Scroll sideways for the rest of your cards.</span>}
                     </p>
                   </div>
 
                   {/* Small screens get a stacked list; the matrix needs width to stay legible. */}
                   <ul className="cdv-divide sm:hidden">
                     {uniqueCoverageCategories.map((category) => {
-                      const supporting = cardBalances.filter((c) => (c.derivedCats || []).includes(category));
+                      const supporting = moneyCardBalances.filter((c) => (c.derivedCats || []).includes(category));
                       return (
                         <li key={category} className="px-5 py-4">
                           <div className="flex items-center gap-2.5">
@@ -2560,7 +2800,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                           <th scope="col" className="sticky left-0 z-20 min-w-[210px] border-b border-r border-[var(--cdv-hairline)] bg-[var(--cdv-surface)] px-5 py-3 text-left">
                             <span className="cdv-eyebrow">Category</span>
                           </th>
-                          {cardBalances.map((card) => {
+                          {moneyCardBalances.map((card) => {
                             const prog = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
                             return (
                               <th key={card.id} scope="col" className="min-w-[120px] border-b border-[var(--cdv-hairline)] px-3 py-3 align-bottom text-center">
@@ -2582,7 +2822,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                 <span className="leading-tight">{category}</span>
                               </span>
                             </th>
-                            {cardBalances.map((card) => {
+                            {moneyCardBalances.map((card) => {
                               const covered = (card.derivedCats || []).includes(category);
                               return (
                                 <td key={`${category}-${card.id}`} className="p-2 text-center align-middle transition-colors duration-150 group-hover:bg-[var(--cdv-surface-sunken)]">
@@ -2902,47 +3142,84 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           onClose={() => setBalanceEditCardId(null)}
           title={(() => {
             const named = cardBalances.find((c) => c.id === balanceEditCardId);
-            return named ? `Set balance · ${named.name}` : 'Set balance';
+            const verb = named && isUnitCard(named) ? 'Set remaining' : 'Set balance';
+            return named ? `${verb} · ${named.name}` : verb;
           })()}
         >
           {(() => {
             const target = cardBalances.find((c) => c.id === balanceEditCardId);
+            const units = isUnitCard(target);
             const hasSnapshot = target && target.balanceSetTo != null && target.balanceSetTo !== '';
             return (
               <form onSubmit={handleSetBalance} className="space-y-6">
                 <p className="text-sm leading-relaxed text-[var(--cdv-mute)]">
-                  Type the amount on this card right now. Use it when spending was not logged, or when more money was added. Older plans stay in the ledger and are already included in this number. Anything you plan after saving is subtracted.
-                  {target && isRecurringRule(target.ruleType) ? ' A monthly or yearly card goes back to its normal refill at the next reset.' : ''}
+                  {units
+                    ? 'Type how many uses are left right now. Use it when a redemption was not logged, or when more were added. Older plans stay in the ledger and are already included in this number. Anything you log after saving is subtracted.'
+                    : 'Type the amount on this card right now. Use it when spending was not logged, or when more money was added. Older plans stay in the ledger and are already included in this number. Anything you plan after saving is subtracted.'}
+                  {target && !units && isRecurringRule(target.ruleType) ? ' A monthly or yearly card goes back to its normal refill at the next reset.' : ''}
                 </p>
                 <div>
-                  <label htmlFor="set-balance-amount" className="cdv-label">Current balance (₪)</label>
+                  <label htmlFor="set-balance-amount" className="cdv-label">{units ? `Uses left${target?.unitLabel ? ` (${target.unitLabel})` : ''}` : 'Current balance (₪)'}</label>
                   <input
                     id="set-balance-amount"
                     type="number"
                     required
                     min="0"
-                    step="0.01"
+                    step={units ? '1' : '0.01'}
                     value={balanceEditValue}
                     onChange={(e) => setBalanceEditValue(e.target.value)}
                     className="cdv-input cdv-amount !text-base !font-semibold"
-                    placeholder="0.00"
+                    placeholder={units ? '0' : '0.00'}
                   />
                 </div>
                 <div className="flex flex-col-reverse gap-2 border-t border-[var(--cdv-hairline)] pt-6 sm:flex-row sm:justify-end">
                   {hasSnapshot ? (
                     <button type="button" onClick={handleClearSetBalance} className="cdv-btn cdv-btn--outline">
-                      Use tracked balance
+                      {units ? 'Use tracked count' : 'Use tracked balance'}
                     </button>
                   ) : null}
-                  <button type="submit" className="cdv-btn cdv-btn--primary">Save balance</button>
+                  <button type="submit" className="cdv-btn cdv-btn--primary">{units ? 'Save remaining' : 'Save balance'}</button>
                 </div>
               </form>
             );
           })()}
         </Modal>
 
-        <Modal isOpen={showCardForm} onClose={resetCardForm} title={editingCardId ? 'Edit Card' : 'Add Program Card'}>
+        <Modal isOpen={showCardForm} onClose={resetCardForm} title={editingCardId ? 'Edit Card' : 'Add Card'}>
           <form onSubmit={handleSaveCard} className="space-y-6">
+            <fieldset>
+              <legend className="cdv-label">What this card holds</legend>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[{ id: 'money', label: 'Money balance', detail: 'Shekels you can spend, like Cibus or a gift card.' }, { id: 'units', label: 'Uses', detail: 'A count of something, like 10 massages or 1 flight. No money.' }].map((option) => {
+                  const isSelected = (newCard.valueKind || 'money') === option.id;
+                  return (
+                    <button
+                      type="button"
+                      key={option.id}
+                      onClick={() => setNewCard({
+                        ...newCard,
+                        valueKind: option.id,
+                        ruleType: option.id === 'units'
+                          ? (newCard.ruleType === 'expires' ? 'expires' : 'permanent')
+                          : newCard.ruleType,
+                        programId: option.id === 'units' ? 'CUSTOM' : newCard.programId,
+                        categories: option.id === 'units' ? [] : newCard.categories,
+                      })}
+                      aria-pressed={isSelected}
+                      className="flex flex-col gap-0.5 rounded-[var(--cdv-r-md)] border p-3 text-left transition-colors duration-150"
+                      style={isSelected
+                        ? { borderColor: 'var(--cdv-accent)', background: 'var(--cdv-accent-soft)' }
+                        : { borderColor: 'var(--cdv-hairline)', background: 'var(--cdv-surface-sunken)' }}
+                    >
+                      <span className={`text-sm font-semibold leading-tight ${isSelected ? 'text-[var(--cdv-accent)]' : 'text-[var(--cdv-ink)]'}`}>{option.label}</span>
+                      <span className="text-[11px] leading-snug text-[var(--cdv-mute)]">{option.detail}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            {newCard.valueKind !== 'units' && (
             <fieldset>
               <legend className="cdv-label">Program type</legend>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -2966,17 +3243,39 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 })}
               </div>
             </fieldset>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div><label htmlFor="card-name" className="cdv-label">Display Name</label><input id="card-name" type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="cdv-input" placeholder="e.g. My Cibus Card" /></div>
-              <div>
-                <label htmlFor="card-balance" className="cdv-label">{isRecurringRule(newCard.ruleType) ? 'Added each refill (₪)' : 'Total Limit (₪)'}</label>
-                <input id="card-balance" type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
-                {isRecurringRule(newCard.ruleType) ? (
-                  <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">This is one deposit. A monthly card reloads this amount. A longer cycle adds it again each refill until the reset.</p>
-                ) : null}
-              </div>
+              <div><label htmlFor="card-name" className="cdv-label">Display Name</label><input id="card-name" type="text" required value={newCard.name} onChange={(e) => setNewCard({ ...newCard, name: e.target.value })} className="cdv-input" placeholder={newCard.valueKind === 'units' ? 'e.g. Spa package' : 'e.g. My Cibus Card'} /></div>
+              {newCard.valueKind === 'units' ? (
+                <div>
+                  <label htmlFor="card-unit-count" className="cdv-label">How many</label>
+                  <input id="card-unit-count" type="number" required min="1" step="1" value={newCard.unitCount} onChange={(e) => setNewCard({ ...newCard, unitCount: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="10" />
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="card-balance" className="cdv-label">{isRecurringRule(newCard.ruleType) ? 'Added each refill (₪)' : 'Total Limit (₪)'}</label>
+                  <input id="card-balance" type="number" required min="0" step="0.01" value={newCard.balance} onChange={(e) => setNewCard({ ...newCard, balance: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
+                  {isRecurringRule(newCard.ruleType) ? (
+                    <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">This is one deposit. A monthly card reloads this amount. A longer cycle adds it again each refill until the reset.</p>
+                  ) : null}
+                </div>
+              )}
             </div>
+
+            {newCard.valueKind === 'units' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div>
+                  <label htmlFor="card-unit-label" className="cdv-label">What each one is</label>
+                  <input id="card-unit-label" type="text" required value={newCard.unitLabel} onChange={(e) => setNewCard({ ...newCard, unitLabel: e.target.value })} className="cdv-input" placeholder="massages" />
+                  <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">Shown after the number, so type it the way you want it read: massages, flight ticket, smoothies.</p>
+                </div>
+                <div>
+                  <label htmlFor="card-venue" className="cdv-label">Where</label>
+                  <input id="card-venue" type="text" value={newCard.venue} onChange={(e) => setNewCard({ ...newCard, venue: e.target.value })} className="cdv-input" placeholder="Optional place" />
+                </div>
+              </div>
+            )}
 
             <div>
               <label htmlFor="cdv-card-link" className="cdv-label">Card link</label>
@@ -3031,9 +3330,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             </div>
 
             <fieldset>
-              <legend className="cdv-label">How the balance behaves</legend>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {BALANCE_BEHAVIORS.map((rule) => {
+              <legend className="cdv-label">{newCard.valueKind === 'units' ? 'How long it lasts' : 'How the balance behaves'}</legend>
+              <div className={`grid grid-cols-1 gap-2 ${newCard.valueKind === 'units' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+                {(newCard.valueKind === 'units' ? BALANCE_BEHAVIORS.filter((rule) => rule.id !== 'recurring') : BALANCE_BEHAVIORS).map((rule) => {
                   const isSelected = rule.id === 'recurring'
                     ? isRecurringRule(newCard.ruleType)
                     : newCard.ruleType === rule.id;
@@ -3193,7 +3492,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
             {newCard.ruleType === 'expires' && <div className="animate-in slide-in-from-top-2 fade-in"><label htmlFor="card-expiry" className="cdv-label">Expiration Date</label><input id="card-expiry" type="date" required value={newCard.expiryDate || ''} onChange={(e) => setNewCard({ ...newCard, expiryDate: e.target.value })} className="cdv-input sm:!w-1/2" /></div>}
 
-            {newCard.programId === 'CUSTOM' ? (
+            {newCard.valueKind === 'units' ? null : newCard.programId === 'CUSTOM' ? (
               <fieldset className="animate-in fade-in">
                 <legend className="cdv-label">Where this card can pay</legend>
                 {/* No inner scroll: a nested scroller inside the modal clipped the last row. */}
@@ -3227,23 +3526,25 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               </div>
             )}
             <div className="border-t border-[var(--cdv-hairline)] pt-6">
-              <button type="submit" disabled={(newCard.programId === 'CUSTOM' && newCard.categories.length === 0) || Boolean(isRecurringRule(newCard.ruleType) && specFromRecurringForm(newCard)?.error)} className="cdv-btn cdv-btn--primary w-full !py-3">
+              <button type="submit" disabled={newCard.valueKind === 'units'
+                ? (!String(newCard.unitLabel || '').trim() || !Number.isInteger(Number(newCard.unitCount)) || Number(newCard.unitCount) < 1)
+                : ((newCard.programId === 'CUSTOM' && newCard.categories.length === 0) || Boolean(isRecurringRule(newCard.ruleType) && specFromRecurringForm(newCard)?.error))} className="cdv-btn cdv-btn--primary w-full !py-3">
                 {editingCardId ? 'Save changes' : 'Add to Wallet'}
               </button>
             </div>
           </form>
         </Modal>
 
-        <Modal isOpen={showExpenseForm} onClose={resetExpenseForm} title={editingExpenseId ? 'Edit Plan' : 'Plan a Purchase'}>
+        <Modal isOpen={showExpenseForm} onClose={resetExpenseForm} title={expenseValueKind === 'units' ? (editingExpenseId ? 'Edit use' : 'Log a use') : (editingExpenseId ? 'Edit Plan' : 'Plan a Purchase')}>
           <form onSubmit={handleSaveExpense} className="space-y-6">
             <div className="flex items-center gap-3 rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline)] bg-[var(--cdv-surface-sunken)] p-4">
               <input type="checkbox" id="isCompleted" checked={newExpense.isCompleted} onChange={(e) => setNewExpense({ ...newExpense, isCompleted: e.target.checked })} className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]" />
-              <label htmlFor="isCompleted" className="cursor-pointer"><div className="font-medium text-[var(--cdv-ink)]">Already spent</div><div className="text-xs text-[var(--cdv-mute)]">Tick this if you have already paid at the store.</div></label>
+              <label htmlFor="isCompleted" className="cursor-pointer"><div className="font-medium text-[var(--cdv-ink)]">{expenseValueKind === 'units' ? 'Already used' : 'Already spent'}</div><div className="text-xs text-[var(--cdv-mute)]">{expenseValueKind === 'units' ? 'Tick this if you have already redeemed it.' : 'Tick this if you have already paid at the store.'}</div></label>
             </div>
 
-            <div><label htmlFor="exp-name" className="cdv-label">Item / Purpose</label><input id="exp-name" type="text" required value={newExpense.name} onChange={(e) => setNewExpense({ ...newExpense, name: e.target.value })} className="cdv-input" placeholder="e.g. Cinema Tickets" /></div>
+            <div><label htmlFor="exp-name" className="cdv-label">Item / Purpose</label><input id="exp-name" type="text" required value={newExpense.name} onChange={(e) => setNewExpense({ ...newExpense, name: e.target.value })} className="cdv-input" placeholder={expenseValueKind === 'units' ? 'e.g. Massage' : 'e.g. Cinema Tickets'} /></div>
 
-            <fieldset className="min-w-0">
+            {expenseValueKind !== 'units' && <fieldset className="min-w-0">
               <legend className="cdv-label">Categories</legend>
               <p className="mb-3 text-xs text-[var(--cdv-mute)]">Select every category this purchase touches (one or more).</p>
               {/* No inner scroll: a nested scroller inside the modal clipped the last row. */}
@@ -3257,9 +3558,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   );
                 })}
               </div>
-            </fieldset>
+            </fieldset>}
 
-            <div>
+            {expenseValueKind !== 'units' && <div>
               <label htmlFor="exp-retailer" className="cdv-label">Retailers (optional)</label>
               <p className="mb-2 text-xs text-[var(--cdv-mute)]">Add several stores for the same trip or basket. Pick from search or type and press Add.</p>
               {newExpense.expenseMerchants.length > 0 && (
@@ -3301,46 +3602,59 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 </div>
                 <button type="button" onClick={addExpenseMerchantFreeText} className="cdv-btn cdv-btn--outline shrink-0">Add</button>
               </div>
-            </div>
+            </div>}
 
             <div>
-              <label htmlFor="exp-month" className="cdv-label">Plan for month (optional)</label>
+              <label htmlFor="exp-month" className="cdv-label">{expenseValueKind === 'units' ? 'Date (optional)' : 'Plan for month (optional)'}</label>
               <input id="exp-month" type="date" value={newExpense.scheduledFor || ''} onChange={(e) => setNewExpense({ ...newExpense, scheduledFor: e.target.value })} className="cdv-input sm:!w-64" />
-              <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">Pick the date you intend to pay. <strong className="font-semibold text-[var(--cdv-body)]">Monthly</strong> cards refill on the 1st and ignore other months. Cards that stack, such as a quarterly grant with a yearly reset, include every deposit that will have arrived by this date.</p>
+              <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{expenseValueKind === 'units' ? 'Pick the date you intend to redeem this.' : <>Pick the date you intend to pay. <strong className="font-semibold text-[var(--cdv-body)]">Monthly</strong> cards refill on the 1st and ignore other months. Cards that stack, such as a quarterly grant with a yearly reset, include every deposit that will have arrived by this date.</>}</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {expenseValueKind === 'units' ? (
+                <div>
+                  <label htmlFor="exp-units" className="cdv-label">How many</label>
+                  <input id="exp-units" type="number" required min="1" step="1" value={newExpense.units} onChange={(e) => setNewExpense({ ...newExpense, units: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="1" />
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="exp-amount" className="cdv-label">Estimated Cost (₪)</label>
+                  <input id="exp-amount" type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
+                  {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]" /><label htmlFor="isManualSplit" className="cursor-pointer text-xs text-[var(--cdv-mute)]">Split this payment across multiple cards?</label></div>}
+                </div>
+              )}
               <div>
-                <label htmlFor="exp-amount" className="cdv-label">Estimated Cost (₪)</label>
-                <input id="exp-amount" type="number" required min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
-                {!editingExpenseId && newExpense.amount && <div className="mt-3 flex items-center gap-2"><input type="checkbox" id="isManualSplit" checked={newExpense.isManualSplit || false} onChange={(e) => setNewExpense({ ...newExpense, isManualSplit: e.target.checked, chargeAmount: e.target.checked ? newExpense.amount : '' })} className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]" /><label htmlFor="isManualSplit" className="cursor-pointer text-xs text-[var(--cdv-mute)]">Split this payment across multiple cards?</label></div>}
-              </div>
-              <div>
-                <label htmlFor="exp-card" className="cdv-label">Pay With</label>
+                <label htmlFor="exp-card" className="cdv-label">{expenseValueKind === 'units' ? 'Redeem from' : 'Pay With'}</label>
                 <select id="exp-card" required value={newExpense.cardId} onChange={(e) => setNewExpense({ ...newExpense, cardId: e.target.value })} className="cdv-input appearance-none">
-                  <option value="" disabled>{!newExpense.expenseCategories?.length ? 'Choose a card (add categories to filter by rules)' : '-- Evaluated Cards --'}</option>
-                  {sortedCardBalances.map((card) => {
+                  <option value="" disabled>{expenseValueKind === 'units' ? 'Choose a card' : (!newExpense.expenseCategories?.length ? 'Choose a card (add categories to filter by rules)' : '-- Evaluated Cards --')}</option>
+                  {sortedCardBalances.filter((card) => (expenseValueKind === 'units' ? isUnitCard(card) : !isUnitCard(card))).map((card) => {
                     const noCatsYet = !newExpense.expenseCategories?.length;
                     const isAllowedByRules = noCatsYet || cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants);
                     const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
                     const planAsOf = planDateFromInput(newExpense.scheduledFor);
                     const editingExpenseRow = editingExpenseId ? expenses.find((ex) => ex.id === editingExpenseId) : null;
                     const rem = getRemainingForCardAt(card, planAsOf, editingExpenseRow);
+                    const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
+                    if (expenseValueKind === 'units') {
+                      const wanted = Number(newExpense.units || 0);
+                      const isSelectable = rem > 0 || isEditingCurrent;
+                      const short = wanted > rem && !isEditingCurrent;
+                      return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} — {formatUses(rem, card.unitLabel)} left{short ? ' — not enough' : ''}</option>;
+                    }
                     const canAfford = isEditingCurrent || rem >= parseFloat(newExpense.amount || 0);
                     const isAnchorOrSelected = card.id === newExpense.cardId;
                     const isSelectable = noCatsYet
                       ? (isAnchorOrSelected || rem > 0)
                       : (isAllowedByRules && (rem > 0 || isEditingCurrent));
-                    const expiringTag = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30 ? '[EXPIRING!] ' : '';
                     const ruleHint = noCatsYet ? '' : (!isAllowedByRules ? ' - Rule Blocked' : (!canAfford ? ' - Requires Split' : ''));
                     return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} — {formatShekels(rem)} available{ruleHint}</option>;
                   })}
                 </select>
-                {newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--cdv-danger)]"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
+                {expenseValueKind !== 'units' && newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => !isUnitCard(c) && cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--cdv-danger)]"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
               </div>
             </div>
 
-            {newExpense.isManualSplit && !editingExpenseId && newExpense.cardId && (() => {
+            {expenseValueKind !== 'units' && newExpense.isManualSplit && !editingExpenseId && newExpense.cardId && (() => {
               const splitCard = cardBalances.find((c) => c.id === newExpense.cardId);
               const splitCap = splitCard ? getRemainingForCardAt(splitCard, planDateFromInput(newExpense.scheduledFor)) : 0;
               return (
@@ -3358,11 +3672,14 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 const reqAmount = parseFloat(newExpense.amount || 0);
                 let actualLogAmount = reqAmount;
                 let isSplitNeeded = false;
-                if (selectedCard && !editingExpenseId) {
+                if (expenseValueKind !== 'units' && selectedCard && !editingExpenseId) {
                   if (newExpense.isManualSplit && newExpense.chargeAmount) actualLogAmount = parseFloat(newExpense.chargeAmount || 0);
                   if (actualLogAmount > planRemaining) actualLogAmount = planRemaining;
                   if (actualLogAmount < reqAmount && actualLogAmount > 0) isSplitNeeded = true;
                 }
+                const confirmLabel = expenseValueKind === 'units'
+                  ? (editingExpenseId ? 'Save changes' : 'Log use')
+                  : (editingExpenseId ? 'Save changes' : 'Confirm Plan');
                 return (
                   <button
                     type="submit"
@@ -3373,7 +3690,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   >
                     {isSplitNeeded
                       ? <>Split payment — charge <span className="cdv-amount">{formatShekels(actualLogAmount)}</span> now</>
-                      : (editingExpenseId ? 'Save changes' : 'Confirm Plan')}
+                      : confirmLabel}
                   </button>
                 );
               })()}

@@ -94,9 +94,20 @@ export function isRecurringRule(ruleType) {
   return ruleType === 'monthly' || ruleType === 'cycle';
 }
 
+/** A gift of counted uses (massages, a flight, smoothies), not a shekel balance. */
+export function isUnitCard(card) {
+  return card?.valueKind === 'units';
+}
+
+function wholeUses(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
 /** @returns {null | { grant: number, refillEveryMonths: number, resetEveryMonths: number, cycleStartMonth: number }} */
 export function getCycleSpec(card) {
-  if (!card) return null;
+  if (!card || isUnitCard(card)) return null;
   const grant = shekels(card.balance);
   if (card.ruleType === 'monthly') {
     return { grant, refillEveryMonths: 1, resetEveryMonths: 1, cycleStartMonth: 1 };
@@ -220,7 +231,8 @@ export function balanceOverride(card, asOfInput) {
   if (asOf.getTime() < at.getTime()) return null;
   const spec = getCycleSpec(card);
   if (spec && !expenseInSameResetWindow(card, { scheduledFor: at }, asOf)) return null;
-  return { amount: shekels(card.balanceSetTo), at };
+  const amount = isUnitCard(card) ? wholeUses(card.balanceSetTo) : shekels(card.balanceSetTo);
+  return { amount, at };
 }
 
 export function expenseCountsTowardBalance(card, expense, asOfInput) {
@@ -232,7 +244,20 @@ export function expenseCountsTowardBalance(card, expense, asOfInput) {
   return true;
 }
 
+function computeUnitFunds(card, expenses, asOfInput) {
+  const asOf = asOfDate(asOfInput);
+  const list = Array.isArray(expenses) ? expenses : [];
+  const override = balanceOverride(card, asOf);
+  const spent = list.reduce((sum, expense) => {
+    if (!expenseCountsTowardBalance(card, expense, asOf)) return sum;
+    return sum + wholeUses(expense.units);
+  }, 0);
+  const loaded = override ? override.amount : wholeUses(card.unitCount);
+  return { spent, loaded, remaining: loaded - spent, cycle: null, balanceOverride: override };
+}
+
 export function computeCardFunds(card, expenses, asOfInput) {
+  if (isUnitCard(card)) return computeUnitFunds(card, expenses, asOfInput);
   const asOf = asOfDate(asOfInput);
   const list = Array.isArray(expenses) ? expenses : [];
   const spec = getCycleSpec(card);
@@ -254,6 +279,7 @@ export function computeCardFunds(card, expenses, asOfInput) {
 export function remainingForPlan(card, expenses, asOfInput, editingExpense) {
   const funds = computeCardFunds(card, expenses, asOfInput);
   if (!editingExpense || !expenseCountsTowardBalance(card, editingExpense, asOfInput)) return funds.remaining;
+  if (isUnitCard(card)) return funds.remaining + wholeUses(editingExpense.units);
   return shekels(funds.remaining + shekels(editingExpense.amount));
 }
 
