@@ -1179,6 +1179,18 @@ function formatPlasticExpiry(iso) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** Credit-card style month/year. A YYYY-MM-DD value is read as a calendar date, not a UTC instant. */
+function formatExpiryMonthYear(value) {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})/);
+    if (match) return `${match[2]}/${match[1].slice(-2)}`;
+  }
+  const d = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(-2)}`;
+}
+
 /** http(s) balance-page URL, or empty when missing / not a web link. */
 function normalizeCardLink(raw) {
   const trimmed = String(raw || '').trim();
@@ -2893,6 +2905,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       const units = isUnitCard(card);
                       const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
                       const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
+                      const expiryLabel = card.ruleType === 'expires' ? formatExpiryMonthYear(card.expiryDate) : '';
                       const isOpen = openWalletCardId === card.id;
                       return (
                         <li key={card.id} className="cdv-wallet-entry">
@@ -2904,7 +2917,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             onClick={() => setOpenWalletCardId(isOpen ? null : card.id)}
                           >
                             <span className="cdv-wallet-item__swatch" style={{ background: chromeGradient }} aria-hidden />
-                            <span className="cdv-wallet-item__name" title={card.name}>{card.name}</span>
+                            <span className="cdv-wallet-item__identity">
+                              <span className="cdv-wallet-item__name" title={card.name}>{card.name}</span>
+                              {expiryLabel ? (
+                                <span className={`cdv-wallet-item__expiry${isExpiringSoon ? ' cdv-wallet-item__expiry--soon' : ''}`} title={`Expires ${expiryLabel}`}>{expiryLabel}</span>
+                              ) : null}
+                            </span>
                             {units
                               ? <span className="cdv-wallet-item__balance">{formatUses(card.remaining, card.unitLabel)}</span>
                               : <Money value={card.remaining} className="cdv-wallet-item__balance" />}

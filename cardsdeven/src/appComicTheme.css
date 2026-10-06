@@ -538,8 +538,16 @@ button:focus-visible,
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
-.cdv-wallet-item__name {
+.cdv-wallet-item__identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
   flex: 1;
+  min-width: 0;
+}
+
+.cdv-wallet-item__name {
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 0.9375rem;
   font-weight: 600;
@@ -548,6 +556,19 @@ button:focus-visible,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cdv-wallet-item__expiry {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--cdv-mute);
+}
+
+.cdv-wallet-item__expiry--soon {
+  color: var(--cdv-warning);
 }
 
 .cdv-wallet-item__balance {
