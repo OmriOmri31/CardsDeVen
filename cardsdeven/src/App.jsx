@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef, useId } from 'react';
-import { initializeApp } from 'firebase/app';
+import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signOut, onAuthStateChanged, signInAnonymously
+  signOut, onAuthStateChanged, signInAnonymously,
+  sendPasswordResetEmail, verifyPasswordResetCode, confirmPasswordReset,
 } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, deleteField } from 'firebase/firestore';
 import {
@@ -62,6 +63,93 @@ function resolveFirebaseConfig() {
 const GRADIENTS = [
   'bg-gradient-to-br from-slate-700 to-slate-900',
 ];
+
+/** Same response whether or not the address is registered, so reset requests cannot be used to look up accounts. */
+const PASSWORD_RESET_NOTICE = 'If an account exists for that email, a reset link is on its way. It expires in one hour and can only be used once. Check your inbox and spam folder.';
+const PASSWORD_RESET_COOLDOWN_MS = 60_000;
+const PASSWORD_RESET_COOLDOWN_KEY = 'cdv-password-reset-cooldown';
+const PASSWORD_RESET_CODE_KEY = 'cdv-password-reset-code';
+
+function getFirebaseApp() {
+  return getApps().length ? getApp() : initializeApp(resolveFirebaseConfig());
+}
+
+function normalizeAuthEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isPlausibleEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function readPasswordResetCodeFromLocation() {
+  const sources = [
+    new URLSearchParams(window.location.search),
+    new URLSearchParams(window.location.hash.replace(/^#/, '')),
+  ];
+  for (const params of sources) {
+    if (params.get('mode') === 'resetPassword' && params.get('oobCode')) return params.get('oobCode');
+  }
+  return '';
+}
+
+function readPasswordResetOobCode() {
+  if (typeof window === 'undefined') return '';
+  const fromLocation = readPasswordResetCodeFromLocation();
+  if (fromLocation) return fromLocation;
+  try {
+    return sessionStorage.getItem(PASSWORD_RESET_CODE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberPasswordResetCode(code) {
+  if (!code) return;
+  try { sessionStorage.setItem(PASSWORD_RESET_CODE_KEY, code); } catch { /* private mode */ }
+}
+
+function forgetPasswordResetCode() {
+  try { sessionStorage.removeItem(PASSWORD_RESET_CODE_KEY); } catch { /* private mode */ }
+}
+
+function clearPasswordResetParams() {
+  const url = new URL(window.location.href);
+  ['mode', 'oobCode', 'apiKey', 'lang', 'continueUrl', 'tenantId'].forEach((key) => url.searchParams.delete(key));
+  if (url.hash) {
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+    if (hashParams.has('oobCode') || hashParams.get('mode') === 'resetPassword') url.hash = '';
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function readResetCooldownMap() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(PASSWORD_RESET_COOLDOWN_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function cooldownSecondsLeft(normalizedEmail) {
+  const until = Number(readResetCooldownMap()[normalizedEmail]) || 0;
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+function rememberResetCooldown(normalizedEmail) {
+  const map = readResetCooldownMap();
+  const now = Date.now();
+  for (const key of Object.keys(map)) {
+    if (Number(map[key]) <= now) delete map[key];
+  }
+  map[normalizedEmail] = now + PASSWORD_RESET_COOLDOWN_MS;
+  try {
+    sessionStorage.setItem(PASSWORD_RESET_COOLDOWN_KEY, JSON.stringify(map));
+  } catch {
+    /* private mode / quota */
+  }
+}
 
 /** The club catalogue runs to thousands of rows; page it instead of mounting all of them. */
 const DEALS_PAGE_SIZE = 60;
@@ -1794,8 +1882,17 @@ export default function App() {
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [authScreen, setAuthScreen] = useState(() => (readPasswordResetOobCode() ? 'reset' : 'signin'));
+  const [resetOobCode, setResetOobCode] = useState(readPasswordResetOobCode);
+  const [resetCodeStatus, setResetCodeStatus] = useState(() => (readPasswordResetOobCode() ? 'checking' : 'idle'));
+  const [resetAccountEmail, setResetAccountEmail] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
+  const [forgotNotice, setForgotNotice] = useState('');
+  const [resendCooldownSec, setResendCooldownSec] = useState(0);
+  const [firebaseReady, setFirebaseReady] = useState(false);
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [cards, setCards] = useState([]);
@@ -1953,17 +2050,48 @@ export default function App() {
   useEffect(() => {
     let unsubscribe = () => {};
     try {
-      const firebaseConfig = resolveFirebaseConfig();
-      const app = initializeApp(firebaseConfig);
-      const auth = getAuth(app);
+      const auth = getAuth(getFirebaseApp());
+      setFirebaseReady(true);
       unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setLoadingAuth(false); });
     } catch (e) {
       console.error(e);
       setAuthError(e?.message || 'Firebase configuration error');
+      setResetCodeStatus((status) => (status === 'checking' ? 'invalid' : status));
       setLoadingAuth(false);
     }
     return () => { unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (!firebaseReady || !resetOobCode) return undefined;
+    let cancelled = false;
+    rememberPasswordResetCode(resetOobCode);
+    clearPasswordResetParams();
+    setResetCodeStatus('checking');
+    verifyPasswordResetCode(getAuth(), resetOobCode)
+      .then((accountEmail) => {
+        if (cancelled) return;
+        setResetAccountEmail(accountEmail);
+        setResetCodeStatus('valid');
+        setAuthScreen('reset');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        forgetPasswordResetCode();
+        setResetAccountEmail('');
+        setResetCodeStatus('invalid');
+        setAuthScreen('reset');
+      });
+    return () => { cancelled = true; };
+  }, [firebaseReady, resetOobCode]);
+
+  useEffect(() => {
+    if (resendCooldownSec <= 0) return undefined;
+    const id = window.setTimeout(() => {
+      setResendCooldownSec((seconds) => (seconds <= 1 ? 0 : seconds - 1));
+    }, 1000);
+    return () => window.clearTimeout(id);
+  }, [resendCooldownSec]);
 
   useEffect(() => {
     if (!user) {
@@ -2033,13 +2161,24 @@ export default function App() {
     }
   }, [user, cards]);
 
+  const showAuthScreen = (screen) => {
+    setAuthScreen(screen);
+    setAuthError('');
+    setAuthNotice('');
+    setPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    if (screen !== 'forgot') setForgotNotice('');
+  };
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
+    setAuthNotice('');
     setIsProcessingAuth(true);
     const auth = getAuth();
     try {
-      if (isLoginMode) await signInWithEmailAndPassword(auth, email, password);
+      if (authScreen === 'signin') await signInWithEmailAndPassword(auth, email, password);
       else await createUserWithEmailAndPassword(auth, email, password);
       setEmail('');
       setPassword('');
@@ -2050,6 +2189,122 @@ export default function App() {
         setAuthError("Authentication failed. Please check credentials.");
       }
     } finally { setIsProcessingAuth(false); }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e?.preventDefault();
+    setAuthError('');
+    const normalized = normalizeAuthEmail(email);
+    if (!isPlausibleEmail(normalized)) {
+      setAuthError('Enter a valid email address.');
+      return;
+    }
+    const wait = cooldownSecondsLeft(normalized);
+    if (wait > 0) {
+      setResendCooldownSec(wait);
+      setAuthError(`Wait ${wait}s before requesting another link.`);
+      return;
+    }
+    setIsProcessingAuth(true);
+    const auth = getAuth();
+    const continueUrl = `${window.location.origin}${import.meta.env.BASE_URL || '/'}`;
+    try {
+      try {
+        await sendPasswordResetEmail(auth, normalized, { url: continueUrl });
+      } catch (error) {
+        if (error?.code === 'auth/unauthorized-continue-uri' || error?.code === 'auth/invalid-continue-uri') {
+          await sendPasswordResetEmail(auth, normalized);
+        } else {
+          throw error;
+        }
+      }
+      rememberResetCooldown(normalized);
+      setResendCooldownSec(Math.ceil(PASSWORD_RESET_COOLDOWN_MS / 1000));
+      setForgotNotice(PASSWORD_RESET_NOTICE);
+    } catch (error) {
+      const code = error?.code || '';
+      // Missing and disabled accounts get the same notice as a real send, so this form cannot be used to discover accounts.
+      if (code === 'auth/user-not-found' || code === 'auth/user-disabled') {
+        rememberResetCooldown(normalized);
+        setResendCooldownSec(Math.ceil(PASSWORD_RESET_COOLDOWN_MS / 1000));
+        setForgotNotice(PASSWORD_RESET_NOTICE);
+      } else if (code === 'auth/invalid-email' || code === 'auth/missing-email') {
+        setAuthError('Enter a valid email address.');
+      } else if (code === 'auth/too-many-requests' || code === 'auth/quota-exceeded') {
+        setAuthError('Too many reset attempts. Wait a few minutes, then try again.');
+      } else if (code === 'auth/network-request-failed') {
+        setAuthError('Network error. Check your connection and try again.');
+      } else {
+        setAuthError('Could not send a reset link. Try again in a moment.');
+      }
+    } finally {
+      setIsProcessingAuth(false);
+    }
+  };
+
+  const handleConfirmReset = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    if (newPassword.length < 6) {
+      setAuthError('Use at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setAuthError('Those passwords do not match.');
+      return;
+    }
+    setIsProcessingAuth(true);
+    const auth = getAuth();
+    const accountEmail = resetAccountEmail;
+    const chosenPassword = newPassword;
+    try {
+      await confirmPasswordReset(auth, resetOobCode, chosenPassword);
+      forgetPasswordResetCode();
+      clearPasswordResetParams();
+      setResetOobCode('');
+      setResetCodeStatus('done');
+      setAuthScreen('signin');
+      setNewPassword('');
+      setConfirmPassword('');
+      try {
+        await signInWithEmailAndPassword(auth, accountEmail, chosenPassword);
+        setEmail('');
+      } catch {
+        setEmail(accountEmail);
+        setAuthNotice('Password updated. Sign in with your new password.');
+      }
+    } catch (error) {
+      const code = error?.code || '';
+      if (
+        code === 'auth/expired-action-code'
+        || code === 'auth/invalid-action-code'
+        || code === 'auth/user-disabled'
+        || code === 'auth/user-not-found'
+      ) {
+        forgetPasswordResetCode();
+        setResetCodeStatus('invalid');
+        setAuthError('');
+      } else if (code === 'auth/weak-password') {
+        setAuthError('Use at least 6 characters.');
+      } else if (code === 'auth/too-many-requests') {
+        setAuthError('Too many attempts. Wait a few minutes and try again.');
+      } else {
+        setAuthError('Could not update the password. Request a new reset link.');
+      }
+    } finally {
+      setIsProcessingAuth(false);
+    }
+  };
+
+  const dismissPasswordReset = (nextScreen) => {
+    forgetPasswordResetCode();
+    clearPasswordResetParams();
+    setResetOobCode('');
+    setResetCodeStatus('done');
+    setNewPassword('');
+    setConfirmPassword('');
+    setAuthError('');
+    if (!user) setAuthScreen(nextScreen);
   };
 
   const handleSignOut = () => signOut(getAuth());
@@ -2644,7 +2899,25 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     );
   }
 
-  if (!user) {
+  const passwordResetActive = Boolean(resetOobCode) && resetCodeStatus !== 'done';
+  const authTitle = authScreen === 'forgot'
+    ? 'Reset password'
+    : authScreen === 'reset'
+      ? (resetCodeStatus === 'valid' ? 'Choose a new password' : 'Reset password')
+      : (authScreen === 'signup' ? 'Create your account' : 'Sign in');
+  const authSubtitle = authScreen === 'forgot'
+    ? 'Enter the email on your account. If it matches, you’ll get a link to choose a new password.'
+    : authScreen === 'reset'
+      ? (resetCodeStatus === 'valid'
+        ? `This link is for ${resetAccountEmail}. It works once.`
+        : resetCodeStatus === 'checking'
+          ? 'Making sure this link is still valid.'
+          : 'This reset link is invalid or has expired.')
+      : (authScreen === 'signup'
+        ? 'Free, and your card balances stay private to you.'
+        : 'Your wallet and plans sync across devices.');
+
+  if (!user || passwordResetActive) {
     return (
       <div className={`flex min-h-screen min-h-0 flex-1 flex-col ${isDarkMode ? 'dark' : ''}`}>
         <div className="cdv-shell flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12">
@@ -2660,10 +2933,8 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
             </div>
 
             <div className="cdv-panel p-7">
-              <h2 className="cdv-display text-lg">{isLoginMode ? 'Sign in' : 'Create your account'}</h2>
-              <p className="mt-1 text-sm text-[var(--cdv-mute)]">
-                {isLoginMode ? 'Your wallet and plans sync across devices.' : 'Free, and your card balances stay private to you.'}
-              </p>
+              <h2 className="cdv-display text-lg">{authTitle}</h2>
+              <p className="mt-1 text-sm text-[var(--cdv-mute)]">{authSubtitle}</p>
 
               {authError && (
                 <p
@@ -2676,64 +2947,237 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 </p>
               )}
 
-              <form onSubmit={handleAuthSubmit} className="mt-6 space-y-4">
-                <div>
-                  <label htmlFor="cdv-email" className="cdv-label">Email</label>
-                  <div className="relative">
-                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
-                    <input
-                      id="cdv-email"
-                      name="email"
-                      type="email"
-                      required
-                      autoComplete="email"
-                      inputMode="email"
-                      spellCheck={false}
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="cdv-input !pl-10"
-                      placeholder="you@example.com"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label htmlFor="cdv-password" className="cdv-label">Password</label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
-                    <input
-                      id="cdv-password"
-                      name="password"
-                      type="password"
-                      required
-                      minLength={6}
-                      autoComplete={isLoginMode ? 'current-password' : 'new-password'}
-                      spellCheck={false}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="cdv-input !pl-10"
-                      placeholder="At least 6 characters"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-                <button type="submit" disabled={isProcessingAuth} className="cdv-btn cdv-btn--primary !mt-6 w-full !py-3">
-                  {isProcessingAuth
-                    ? <><Loader2 className="animate-spin" size={17} aria-hidden /> {isLoginMode ? 'Signing in…' : 'Creating account…'}</>
-                    : (isLoginMode ? 'Sign In' : 'Create Account')}
-                </button>
-              </form>
-
-              <p className="mt-6 border-t border-[var(--cdv-hairline)] pt-5 text-center text-sm text-[var(--cdv-mute)]">
-                {isLoginMode ? 'No account yet? ' : 'Already have an account? '}
-                <button
-                  type="button"
-                  onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }}
-                  className="rounded font-semibold text-[var(--cdv-accent)] hover:underline"
+              {authNotice && (
+                <p
+                  role="status"
+                  className="mt-5 flex items-start gap-2 rounded-[var(--cdv-r-md)] px-3.5 py-3 text-sm"
+                  style={{ background: 'var(--cdv-positive-soft)', color: 'var(--cdv-positive)' }}
                 >
-                  {isLoginMode ? 'Create one' : 'Sign in'}
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden />
+                  <span>{authNotice}</span>
+                </p>
+              )}
+
+              {authScreen === 'forgot' && (
+                forgotNotice ? (
+                  <div className="mt-6">
+                    <p
+                      role="status"
+                      className="flex items-start gap-2 rounded-[var(--cdv-r-md)] px-3.5 py-3 text-sm"
+                      style={{ background: 'var(--cdv-positive-soft)', color: 'var(--cdv-positive)' }}
+                    >
+                      <CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden />
+                      <span>{forgotNotice}</span>
+                    </p>
+                    <button type="button" onClick={() => showAuthScreen('signin')} className="cdv-btn cdv-btn--primary mt-6 w-full !py-3">
+                      Back to sign in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={isProcessingAuth || resendCooldownSec > 0}
+                      className="cdv-btn cdv-btn--outline mt-3 w-full !py-3"
+                    >
+                      {isProcessingAuth
+                        ? <><Loader2 className="animate-spin" size={17} aria-hidden /> Sending…</>
+                        : (resendCooldownSec > 0 ? `Resend in ${resendCooldownSec}s` : 'Resend link')}
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPassword} className="mt-6 space-y-4">
+                    <div>
+                      <label htmlFor="cdv-reset-email" className="cdv-label">Email</label>
+                      <div className="relative">
+                        <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                        <input
+                          id="cdv-reset-email"
+                          name="email"
+                          type="email"
+                          required
+                          autoComplete="email"
+                          inputMode="email"
+                          spellCheck={false}
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="cdv-input !pl-10"
+                          placeholder="you@example.com"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                    <button type="submit" disabled={isProcessingAuth} className="cdv-btn cdv-btn--primary !mt-6 w-full !py-3">
+                      {isProcessingAuth
+                        ? <><Loader2 className="animate-spin" size={17} aria-hidden /> Sending…</>
+                        : 'Send reset link'}
+                    </button>
+                  </form>
+                )
+              )}
+
+              {authScreen === 'reset' && resetCodeStatus === 'checking' && (
+                <p className="mt-6 flex items-center gap-2 text-sm text-[var(--cdv-mute)]" role="status">
+                  <Loader2 className="animate-spin" size={17} aria-hidden />
+                  Checking your reset link…
+                </p>
+              )}
+
+              {authScreen === 'reset' && resetCodeStatus === 'invalid' && (
+                <button type="button" onClick={() => dismissPasswordReset('forgot')} className="cdv-btn cdv-btn--primary mt-6 w-full !py-3">
+                  {user ? 'Back to wallet' : 'Request a new link'}
                 </button>
-              </p>
+              )}
+
+              {authScreen === 'reset' && resetCodeStatus === 'valid' && (
+                <form onSubmit={handleConfirmReset} className="mt-6 space-y-4">
+                  <div>
+                    <label htmlFor="cdv-new-password" className="cdv-label">New password</label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                      <input
+                        id="cdv-new-password"
+                        name="new-password"
+                        type="password"
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        spellCheck={false}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="cdv-input !pl-10"
+                        placeholder="At least 6 characters"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="cdv-confirm-password" className="cdv-label">Confirm password</label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                      <input
+                        id="cdv-confirm-password"
+                        name="confirm-password"
+                        type="password"
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        spellCheck={false}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="cdv-input !pl-10"
+                        placeholder="Repeat the new password"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={isProcessingAuth} className="cdv-btn cdv-btn--primary !mt-6 w-full !py-3">
+                    {isProcessingAuth
+                      ? <><Loader2 className="animate-spin" size={17} aria-hidden /> Updating…</>
+                      : 'Update password'}
+                  </button>
+                  <button type="button" onClick={() => dismissPasswordReset('signin')} className="cdv-btn cdv-btn--ghost w-full !py-3">
+                    Cancel
+                  </button>
+                </form>
+              )}
+
+              {(authScreen === 'signin' || authScreen === 'signup') && (
+                <form onSubmit={handleAuthSubmit} className="mt-6 space-y-4">
+                  <div>
+                    <label htmlFor="cdv-email" className="cdv-label">Email</label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                      <input
+                        id="cdv-email"
+                        name="email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        inputMode="email"
+                        spellCheck={false}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="cdv-input !pl-10"
+                        placeholder="you@example.com"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <label htmlFor="cdv-password" className="cdv-label !mb-0">Password</label>
+                      {authScreen === 'signin' && (
+                        <button
+                          type="button"
+                          onClick={() => showAuthScreen('forgot')}
+                          className="rounded text-xs font-semibold text-[var(--cdv-accent)] hover:underline"
+                        >
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+                      <input
+                        id="cdv-password"
+                        name="password"
+                        type="password"
+                        required
+                        minLength={6}
+                        autoComplete={authScreen === 'signin' ? 'current-password' : 'new-password'}
+                        spellCheck={false}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="cdv-input !pl-10"
+                        placeholder="At least 6 characters"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={isProcessingAuth} className="cdv-btn cdv-btn--primary !mt-6 w-full !py-3">
+                    {isProcessingAuth
+                      ? <><Loader2 className="animate-spin" size={17} aria-hidden /> {authScreen === 'signin' ? 'Signing in…' : 'Creating account…'}</>
+                      : (authScreen === 'signin' ? 'Sign In' : 'Create Account')}
+                  </button>
+                </form>
+              )}
+
+              {authScreen !== 'reset' && !(authScreen === 'forgot' && forgotNotice) && (
+                <p className="mt-6 border-t border-[var(--cdv-hairline)] pt-5 text-center text-sm text-[var(--cdv-mute)]">
+                  {authScreen === 'forgot' && (
+                    <button
+                      type="button"
+                      onClick={() => showAuthScreen('signin')}
+                      className="rounded font-semibold text-[var(--cdv-accent)] hover:underline"
+                    >
+                      Back to sign in
+                    </button>
+                  )}
+                  {authScreen === 'signin' && (
+                    <>
+                      No account yet?{' '}
+                      <button
+                        type="button"
+                        onClick={() => showAuthScreen('signup')}
+                        className="rounded font-semibold text-[var(--cdv-accent)] hover:underline"
+                      >
+                        Create one
+                      </button>
+                    </>
+                  )}
+                  {authScreen === 'signup' && (
+                    <>
+                      Already have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => showAuthScreen('signin')}
+                        className="rounded font-semibold text-[var(--cdv-accent)] hover:underline"
+                      >
+                        Sign in
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </div>
