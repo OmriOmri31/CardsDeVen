@@ -705,7 +705,86 @@ const toScheduledForInputValue = (v) => {
   return '';
 };
 
+function storeNameKey(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function acceptedStoreNames(card) {
+  if (!Array.isArray(card?.acceptedStores)) return [];
+  return [...new Set(card.acceptedStores.map((s) => String(s || '').trim()).filter(Boolean))];
+}
+
+function storeLimitSummary(card) {
+  const names = acceptedStoreNames(card).map((n) => n.split('(')[0].trim());
+  if (!names.length) return '';
+  if (names.length <= 2) return names.join(', ');
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+}
+
+/** Built-in merchants plus stores this user has typed in. */
+function catalogEntries(customStores = []) {
+  const entries = Object.entries(KNOWN_MERCHANTS);
+  const seen = new Set(entries.map(([name]) => storeNameKey(name)));
+  for (const store of customStores || []) {
+    const name = String(store?.name || '').trim();
+    if (!name) continue;
+    const key = storeNameKey(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const cat = CATEGORIES.includes(store.cat) ? store.cat : 'Other';
+    entries.push([name, { cat, networks: [], aliases: [], custom: true }]);
+  }
+  return entries;
+}
+
+function merchantMeta(name, customStores = []) {
+  if (!name) return null;
+  if (KNOWN_MERCHANTS[name]) return KNOWN_MERCHANTS[name];
+  const key = storeNameKey(name);
+  const custom = (customStores || []).find((s) => storeNameKey(s.name) === key);
+  if (!custom) return null;
+  return { cat: CATEGORIES.includes(custom.cat) ? custom.cat : 'Other', networks: [], aliases: [], custom: true };
+}
+
+/** Keep a typed name when it is new. Otherwise return the catalog spelling. */
+function resolveCatalogStoreName(raw, customStores = []) {
+  const trimmed = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+  const key = storeNameKey(trimmed);
+  const entries = catalogEntries(customStores);
+  const exact = entries.find(([name]) => {
+    if (storeNameKey(name) === key) return true;
+    const short = storeNameKey(name.split('(')[0]);
+    return short.length >= 2 && short === key;
+  });
+  if (exact) return exact[0];
+  const alias = entries.find(([, data]) => (data.aliases || []).some((a) => storeNameKey(a) === key));
+  return alias ? alias[0] : trimmed;
+}
+
+function cleanStoreCatalog(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of raw) {
+    const name = String(entry?.name || '').trim().replace(/\s+/g, ' ');
+    if (!name || KNOWN_MERCHANTS[name]) continue;
+    const key = storeNameKey(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, cat: CATEGORIES.includes(entry?.cat) ? entry.cat : 'Other' });
+  }
+  return out;
+}
+
 const checkCompatibility = (card, category, merchantName) => {
+  const limited = acceptedStoreNames(card);
+  if (limited.length > 0) {
+    const wanted = storeNameKey(merchantName);
+    if (!wanted || !limited.some((s) => storeNameKey(s) === wanted)) {
+      return { allowed: false, reason: 'Limited to specific stores' };
+    }
+  }
   const pId = card.programId || 'CUSTOM';
   const merchData = KNOWN_MERCHANTS[merchantName];
 
@@ -740,13 +819,13 @@ const checkCompatibility = (card, category, merchantName) => {
 };
 
 /** Card must satisfy every selected merchant (with its catalog category) and every extra category without a matching merchant. */
-const cardMatchesExpenseSelection = (card, categories, merchants) => {
+const cardMatchesExpenseSelection = (card, categories, merchants, customStores = []) => {
   const cats = [...new Set((categories || []).filter(Boolean))];
   const merchs = [...new Set((merchants || []).filter(Boolean))];
   if (cats.length === 0) return false;
   const coveredCats = new Set();
   for (const m of merchs) {
-    const mdata = KNOWN_MERCHANTS[m];
+    const mdata = merchantMeta(m, customStores) || KNOWN_MERCHANTS[m];
     const catForMerchant = mdata?.cat || cats[0];
     coveredCats.add(catForMerchant);
     if (!checkCompatibility(card, catForMerchant, m).allowed) return false;
@@ -758,7 +837,7 @@ const cardMatchesExpenseSelection = (card, categories, merchants) => {
   return true;
 };
 
-function pickExpenseCardId(cardBalances, categories, merchants, previousCardId, anchorCardId) {
+function pickExpenseCardId(cardBalances, categories, merchants, previousCardId, anchorCardId, customStores = []) {
   const moneyCards = cardBalances.filter((c) => !isUnitCard(c));
   if (!categories || categories.length === 0) {
     for (const id of [previousCardId, anchorCardId]) {
@@ -770,7 +849,7 @@ function pickExpenseCardId(cardBalances, categories, merchants, previousCardId, 
   for (const id of [previousCardId, anchorCardId]) {
     if (!id) continue;
     const card = moneyCards.find((c) => c.id === id);
-    if (card && cardMatchesExpenseSelection(card, categories, merchants)) return id;
+    if (card && cardMatchesExpenseSelection(card, categories, merchants, customStores)) return id;
   }
   return '';
 }
@@ -795,11 +874,11 @@ const getDerivedCategories = (card) => {
   return Array.from(derived);
 };
 
-const getSmartMatches = (query, maxResults = 15) => {
+const getSmartMatches = (query, maxResults = 15, customStores = []) => {
   if (!query) return [];
   const q = query.toLowerCase().trim();
 
-  return Object.entries(KNOWN_MERCHANTS)
+  return catalogEntries(customStores)
     .filter(([name, data]) => {
       const cleanName = name.toLowerCase().replace(/[()]/g, '');
       const matchName = cleanName.includes(q) || cleanName.split(/\s+/).some((w) => w.startsWith(q));
@@ -835,6 +914,15 @@ const getSmartMatches = (query, maxResults = 15) => {
       return nameA.localeCompare(nameB);
     }).slice(0, maxResults);
 };
+
+/** Every known store when the query is empty, otherwise the same search as checkout. */
+function listStoresForPicker(query, customStores = []) {
+  const q = String(query || '').trim();
+  if (!q) {
+    return [...catalogEntries(customStores)].sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }
+  return getSmartMatches(q, 40, customStores);
+}
 
 const fetchGeminiAIResponse = async (query, history, systemInstruction, signal) => {
   try {
@@ -1235,6 +1323,12 @@ function OpenWalletCard({ card, detailRef, onEdit, onDelete, onSpend, onSetBalan
                 Check balance
               </a>
             ) : null}
+            {normalizeCardLink(card.storeListLink) ? (
+              <a href={normalizeCardLink(card.storeListLink)} target="_blank" rel="noopener noreferrer" className="cdv-btn cdv-btn--outline">
+                <ExternalLink size={15} className="shrink-0" aria-hidden />
+                Store list
+              </a>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1243,12 +1337,27 @@ function OpenWalletCard({ card, detailRef, onEdit, onDelete, onSpend, onSetBalan
           Redeem as {card.unitLabel || 'uses'}{card.venue ? ` at ${card.venue}` : ''}.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-1.5 border-t border-[var(--cdv-hairline)] pt-4">
-          {card.derivedCats.map((cat) => (
-            <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
-              <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
-            </span>
-          ))}
+        <div className="space-y-3 border-t border-[var(--cdv-hairline)] pt-4">
+          {acceptedStoreNames(card).length > 0 && (
+            <div>
+              <p className="mb-2 text-xs text-[var(--cdv-mute)]">Pays only at</p>
+              <div className="flex flex-wrap gap-1.5">
+                {acceptedStoreNames(card).map((name) => (
+                  <span key={name} className="cdv-chip">
+                    <MerchantIcon merchantName={name} category={KNOWN_MERCHANTS[name]?.cat || 'Other'} className="h-5 w-5 rounded border-0 bg-transparent" />
+                    <span className="max-w-[14rem] truncate" dir="auto">{name.split('(')[0].trim()}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {card.derivedCats.map((cat) => (
+              <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
+                <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </article>
@@ -1380,8 +1489,10 @@ const EMPTY_CARD_FORM = {
   cycleStartMonth: 1,
   expiryDate: '',
   categories: [],
+  acceptedStores: [],
   plasticAccentHex: '',
   cardLink: '',
+  storeListLink: '',
 };
 
 const EMPTY_EXPENSE_FORM = {
@@ -1426,7 +1537,7 @@ function walletLineForAdvisor(card) {
       const when = formatDate(card.balanceOverride.at);
       line += ` [USES LEFT were set on ${when} to ${formatUses(card.balanceOverride.amount, card.unitLabel)}. Uses before that moment are already included. Later uses reduce this figure.]`;
     }
-    return line;
+    return appendStoreListLink(card, line);
   }
   const spec = getCycleSpec(card);
   const remaining = Number(card.remaining);
@@ -1446,7 +1557,15 @@ function walletLineForAdvisor(card) {
     const when = formatDate(card.balanceOverride.at);
     line += ` [CURRENT BALANCE was set on ${when} to ₪${card.balanceOverride.amount}. Spending before that moment is already included. Later spending reduces this figure. A recurring card returns to its normal refill at the next reset.]`;
   }
-  return line;
+  const onlyAt = acceptedStoreNames(card);
+  if (onlyAt.length) line += ` [GIFT CARD STORES ONLY: ${onlyAt.join(', ')}. Do not use this card at any other store.]`;
+  return appendStoreListLink(card, line);
+}
+
+function appendStoreListLink(card, line) {
+  const storeList = normalizeCardLink(card.storeListLink);
+  if (!storeList) return line;
+  return `${line} [STORE LIST of places this card can pay: ${storeList}]`;
 }
 
 function balanceSetLine(card) {
@@ -1520,6 +1639,142 @@ const MerchantIcon = ({ merchantName, category, className = "w-8 h-8 rounded-[8p
   );
 };
 
+function StoreLimitPicker({ selected, customStores, defaultCategory, onAdd, onCreate, onRemove }) {
+  const listId = useId();
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [newCat, setNewCat] = useState(defaultCategory || 'Other');
+  const [trackedDefaultCategory, setTrackedDefaultCategory] = useState(defaultCategory);
+  const boxRef = useRef(null);
+  if (defaultCategory !== trackedDefaultCategory) {
+    setTrackedDefaultCategory(defaultCategory);
+    setNewCat(defaultCategory || 'Other');
+  }
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const queryTrim = query.trim();
+  const resolved = queryTrim ? resolveCatalogStoreName(queryTrim, customStores) : '';
+  const inCatalog = Boolean(resolved) && catalogEntries(customStores).some(([name]) => name === resolved);
+  const alreadySelected = Boolean(resolved) && selected.some((s) => storeNameKey(s) === storeNameKey(resolved));
+  const matches = listStoresForPicker(query, customStores).filter(([name]) => !selected.some((s) => storeNameKey(s) === storeNameKey(name)));
+  const showCreate = Boolean(queryTrim) && !inCatalog && matches.length === 0 && !alreadySelected;
+
+  const commit = () => {
+    if (!queryTrim || alreadySelected) return;
+    if (inCatalog) {
+      const cat = catalogEntries(customStores).find(([name]) => name === resolved)?.[1]?.cat;
+      onAdd(resolved, cat);
+    } else if (matches.length === 1) {
+      onAdd(matches[0][0], matches[0][1].cat);
+    } else if (matches.length === 0) {
+      onCreate(queryTrim.replace(/\s+/g, ' '), newCat);
+    } else {
+      return;
+    }
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <fieldset ref={boxRef} className="min-w-0">
+      <legend className="cdv-label">Only these stores</legend>
+      <p className="mb-2 text-xs leading-relaxed text-[var(--cdv-mute)]">Optional. Leave empty and the card follows its program or categories. Pick one or more stores and it pays only at those, still within that program or those categories. Search the list, or add a name that is not in it — that store is saved for next time.</p>
+      {selected.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {selected.map((name) => {
+            const cat = merchantMeta(name, customStores)?.cat || KNOWN_MERCHANTS[name]?.cat || 'Other';
+            return (
+              <span key={name} className="cdv-chip !pr-1">
+                <MerchantIcon merchantName={name} category={cat} className="h-5 w-5 rounded border-0 bg-transparent" />
+                <span className="max-w-[12rem] truncate" dir="auto">{name.split('(')[0].trim()}</span>
+                <button type="button" onClick={() => onRemove(name)} className="rounded-full p-1 text-[var(--cdv-faint)] transition-colors duration-150 hover:bg-[var(--cdv-hairline)] hover:text-[var(--cdv-ink)]" aria-label={`Remove ${name}`}><X size={14} /></button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--cdv-faint)]" size={17} aria-hidden />
+          <input
+            id="card-stores"
+            type="search"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            autoComplete="off"
+            spellCheck={false}
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commit(); }
+              if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+            }}
+            className="cdv-input !pl-10"
+            placeholder="Search stores, or type a new one"
+          />
+        </div>
+        {showCreate && (
+          <select
+            aria-label="Category for the new store"
+            value={newCat}
+            onChange={(e) => setNewCat(e.target.value)}
+            className="cdv-input appearance-none sm:max-w-[14rem]"
+          >
+            {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+          </select>
+        )}
+        <button type="button" onClick={commit} disabled={!queryTrim || alreadySelected || (!inCatalog && matches.length > 1)} className="cdv-btn cdv-btn--outline shrink-0">
+          {showCreate ? 'Add store' : 'Add'}
+        </button>
+      </div>
+      {alreadySelected && queryTrim ? <p className="mt-2 text-xs text-[var(--cdv-mute)]">That store is already on this card.</p> : null}
+      {queryTrim && !alreadySelected && !inCatalog && matches.length > 1 ? (
+        <p className="mt-2 text-xs text-[var(--cdv-mute)]">Several stores match. Pick one from the list, or keep typing a new name.</p>
+      ) : null}
+      {open && (
+        <div id={listId} role="listbox" aria-label="Known stores" className="mt-1 max-h-56 overflow-y-auto rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline-strong)] bg-[var(--cdv-surface)] shadow-[var(--cdv-shadow-lg)]">
+          {matches.map(([name, data]) => (
+            <button
+              type="button"
+              role="option"
+              key={name}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onAdd(name, data.cat);
+                setQuery('');
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between gap-3 border-b border-[var(--cdv-hairline)] p-3 text-left transition-colors duration-150 last:border-0 hover:bg-[var(--cdv-surface-sunken)]"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <MerchantIcon merchantName={name} category={data.cat} className="h-6 w-6 rounded border-0 bg-transparent" />
+                <span className="min-w-0 truncate font-medium text-[var(--cdv-ink)]" dir="auto">{name}</span>
+              </span>
+              <span className="cdv-chip cdv-cat shrink-0" style={categoryHueStyle(data.cat)}>{data.cat}</span>
+            </button>
+          ))}
+          {matches.length === 0 && (
+            <p className="p-3 text-center text-sm text-[var(--cdv-mute)]">
+              {showCreate ? `No match. Add “${queryTrim}” to save it.` : 'No stores match.'}
+            </p>
+          )}
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
@@ -1535,6 +1790,7 @@ export default function App() {
   const [openWalletCardId, setOpenWalletCardId] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
+  const [customStores, setCustomStores] = useState([]);
   const [aiMessages, setAiMessages] = useState(() => loadAiChatFromStorage() ?? [{ role: 'model', text: DEFAULT_AI_WELCOME_TEXT }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
@@ -1551,6 +1807,9 @@ export default function App() {
   const aiRequestInFlightRef = useRef(false);
   const quickSpendAnchorCardIdRef = useRef(null);
   const walletDetailRef = useRef(null);
+  const customStoresRef = useRef([]);
+  const pendingStoresRef = useRef([]);
+  const storeWriteRef = useRef(Promise.resolve());
   const [showCardForm, setShowCardForm] = useState(false);
   const [cardPendingDelete, setCardPendingDelete] = useState(null);
   const [balanceEditCardId, setBalanceEditCardId] = useState(null);
@@ -1695,20 +1954,72 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) { setCards([]); setExpenses([]); setUserClubs([]); return; }
+    if (!user) {
+      setCards([]);
+      setExpenses([]);
+      setUserClubs([]);
+      setCustomStores([]);
+      customStoresRef.current = [];
+      pendingStoresRef.current = [];
+      return;
+    }
     let unsubCards = () => {};
     let unsubExpenses = () => {};
     let unsubClubs = () => {};
+    let unsubStores = () => {};
+    pendingStoresRef.current = [];
     try {
       const db = getFirestore();
       unsubCards = onSnapshot(collection(db, getCollectionPath(user.uid, 'cards')), (snapshot) => setCards(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
       unsubExpenses = onSnapshot(collection(db, getCollectionPath(user.uid, 'expenses')), (snapshot) => setExpenses(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
       unsubClubs = onSnapshot(doc(db, getCollectionPath(user.uid, 'settings'), 'clubsProfile'), (docSnap) => { if (docSnap.exists()) setUserClubs(docSnap.data().activeClubs || []); });
+      unsubStores = onSnapshot(doc(db, getCollectionPath(user.uid, 'settings'), 'storeCatalog'), (docSnap) => {
+        const clean = cleanStoreCatalog(docSnap.exists() ? docSnap.data().entries : []);
+        const pending = pendingStoresRef.current.filter((s) => !clean.some((row) => storeNameKey(row.name) === storeNameKey(s.name)));
+        pendingStoresRef.current = pending;
+        const merged = [...clean, ...pending];
+        customStoresRef.current = merged;
+        setCustomStores(merged);
+      });
     } catch (e) {
       console.error('Firestore', e);
     }
-    return () => { unsubCards(); unsubExpenses(); unsubClubs(); };
+    return () => { unsubCards(); unsubExpenses(); unsubClubs(); unsubStores(); };
   }, [user]);
+
+  const rememberStore = (name, cat) => {
+    const trimmed = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!trimmed || !user) return Promise.resolve('');
+    const resolved = resolveCatalogStoreName(trimmed, customStoresRef.current);
+    if (catalogEntries(customStoresRef.current).some(([entryName]) => entryName === resolved)) return Promise.resolve(resolved);
+    const category = CATEGORIES.includes(cat) ? cat : 'Other';
+    const entry = { name: trimmed, cat: category };
+    const next = [...customStoresRef.current, entry];
+    customStoresRef.current = next;
+    pendingStoresRef.current = [...pendingStoresRef.current, entry];
+    setCustomStores(next);
+    const write = storeWriteRef.current.then(() => setDoc(
+      doc(getFirestore(), getCollectionPath(user.uid, 'settings'), 'storeCatalog'),
+      { entries: customStoresRef.current.filter((row) => row?.name && !KNOWN_MERCHANTS[row.name]) },
+      { merge: true },
+    ));
+    storeWriteRef.current = write.catch((err) => { console.error('store catalog', err); });
+    return write.then(() => trimmed).catch(() => trimmed);
+  };
+  const rememberStoreRef = useRef(rememberStore);
+  rememberStoreRef.current = rememberStore;
+
+  useEffect(() => {
+    if (!user) return;
+    for (const card of cards) {
+      const fallbackCat = (card.categories || [])[0] || 'Other';
+      for (const name of acceptedStoreNames(card)) {
+        if (KNOWN_MERCHANTS[name]) continue;
+        if (customStoresRef.current.some((row) => storeNameKey(row.name) === storeNameKey(name))) continue;
+        rememberStoreRef.current(name, fallbackCat);
+      }
+    }
+  }, [user, cards]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -1859,6 +2170,7 @@ USER'S DATA:
 - MONTHLY cards refill to their full grant on the 1st of each calendar month. Only expenses in that same month reduce that month's balance. Unused money does not carry over.
 - CYCLE cards add their grant on a schedule (for example every 3 months). Grants stack until a reset (for example once a year), when the balance returns to zero and the schedule starts again. Only expenses inside the current reset window reduce the balance. "Available now" includes only grants that have already landed. Do not treat the full cycle cap as spendable today.
 - EXPERIENCE cards are marked NOT MONEY. Their numbers are uses of one thing, often at one place (massages, a flight, smoothies). Never treat that count as shekels, never use one to pay a store bill, and mention it only when the user is asking about that thing or that place.
+- A card marked GIFT CARD STORES ONLY pays only at those named stores, even if its categories are broader. A STORE LIST URL is the page of places that card can be used.
 - If the user plans a purchase for a future date, use the balance as of that date. Monthly cards are full again after the 1st. Cycle cards include every grant that will have arrived by then, minus other plans in the same reset window.
 - Mention split payment at checkout when a single card cannot cover the full amount but another card or cash can cover the gap.
 
@@ -1939,6 +2251,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       const cardLink = normalizeCardLink(newCard.cardLink);
       if (cardLink) cardData.cardLink = cardLink;
       else if (editingCardId) cardData.cardLink = deleteField();
+      const storeListLink = normalizeCardLink(newCard.storeListLink);
+      if (storeListLink) cardData.storeListLink = storeListLink;
+      else if (editingCardId) cardData.storeListLink = deleteField();
     };
 
     let cardData;
@@ -1974,6 +2289,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
         cardData.refillEveryMonths = deleteField();
         cardData.resetEveryMonths = deleteField();
         cardData.cycleStartMonth = deleteField();
+        cardData.acceptedStores = deleteField();
       }
     } else {
       if (!newCard.balance) return;
@@ -2007,6 +2323,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
         color: program.color,
         updatedAt: new Date().toISOString(),
       };
+      const stores = [...new Set((newCard.acceptedStores || []).map((s) => String(s).trim()).filter(Boolean))];
+      if (stores.length) cardData.acceptedStores = stores;
+      else if (editingCardId) cardData.acceptedStores = deleteField();
       if (cycleFields) Object.assign(cardData, cycleFields);
       else if (editingCardId) {
         cardData.refillEveryMonths = deleteField();
@@ -2021,6 +2340,13 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       }
     }
     applyChrome(cardData);
+    if (!isUnits && Array.isArray(cardData.acceptedStores)) {
+      for (const name of cardData.acceptedStores) {
+        if (KNOWN_MERCHANTS[name]) continue;
+        const knownCustom = customStoresRef.current.find((row) => storeNameKey(row.name) === storeNameKey(name));
+        await rememberStore(name, knownCustom?.cat || newCard.categories[0] || 'Other');
+      }
+    }
     if (editingCardId) await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'cards'), editingCardId), cardData);
     else await addDoc(collection(getFirestore(), getCollectionPath(user.uid, 'cards')), cardData);
     showToastMsg(editingCardId ? 'Card updated' : 'Card added to wallet');
@@ -2154,7 +2480,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
           isManualSplit: false,
           chargeAmount: '',
         };
-        const cardId = pickExpenseCardId(cardBalances, next.expenseCategories, next.expenseMerchants, '', quickSpendAnchorCardIdRef.current);
+        const cardId = pickExpenseCardId(cardBalances, next.expenseCategories, next.expenseMerchants, '', quickSpendAnchorCardIdRef.current, customStores);
         return { ...next, cardId };
       });
     } else {
@@ -2197,8 +2523,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       cycleStartMonth: card.cycleStartMonth ?? 1,
       expiryDate: card.expiryDate || '',
       categories: card.categories || [],
+      acceptedStores: acceptedStoreNames(card),
       plasticAccentHex: card.plasticAccentHex || '',
       cardLink: card.cardLink || '',
+      storeListLink: card.storeListLink || '',
     });
     setEditingCardId(card.id);
     setShowCardForm(true);
@@ -2243,19 +2571,28 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     setNewExpense((prev) => {
       const merchants = prev.expenseMerchants.includes(name) ? prev.expenseMerchants : [...prev.expenseMerchants, name];
       const categories = prev.expenseCategories.includes(cat) ? prev.expenseCategories : [...prev.expenseCategories, cat];
-      const cardId = pickExpenseCardId(cardBalances, categories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      const cardId = pickExpenseCardId(cardBalances, categories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current, customStores);
       return { ...prev, expenseMerchants: merchants, expenseCategories: categories, cardId };
     });
     setMerchantSearch('');
     setShowMerchantSuggestions(false);
   };
   const addExpenseMerchantFreeText = () => {
-    const t = merchantSearch.trim();
-    if (!t) return;
+    const typed = merchantSearch.trim().replace(/\s+/g, ' ');
+    if (!typed) return;
+    const resolved = resolveCatalogStoreName(typed, customStores);
+    const known = catalogEntries(customStores).find(([name]) => name === resolved);
+    if (known) {
+      addExpenseMerchantFromList(known[0], known[1].cat);
+      return;
+    }
+    if (getSmartMatches(typed, 1, customStores).length === 0 && newExpense.expenseCategories[0]) {
+      rememberStore(typed, newExpense.expenseCategories[0]);
+    }
     setNewExpense((prev) => {
-      if (prev.expenseMerchants.includes(t)) return prev;
-      const merchants = [...prev.expenseMerchants, t];
-      const cardId = pickExpenseCardId(cardBalances, prev.expenseCategories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      if (prev.expenseMerchants.includes(typed)) return prev;
+      const merchants = [...prev.expenseMerchants, typed];
+      const cardId = pickExpenseCardId(cardBalances, prev.expenseCategories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current, customStores);
       return { ...prev, expenseMerchants: merchants, cardId };
     });
     setMerchantSearch('');
@@ -2264,7 +2601,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
   const removeExpenseMerchant = (name) => {
     setNewExpense((prev) => {
       const merchants = prev.expenseMerchants.filter((m) => m !== name);
-      const cardId = pickExpenseCardId(cardBalances, prev.expenseCategories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      const cardId = pickExpenseCardId(cardBalances, prev.expenseCategories, merchants, prev.cardId, quickSpendAnchorCardIdRef.current, customStores);
       return { ...prev, expenseMerchants: merchants, cardId };
     });
   };
@@ -2272,7 +2609,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     setNewExpense((prev) => {
       const has = prev.expenseCategories.includes(cat);
       const categories = has ? prev.expenseCategories.filter((c) => c !== cat) : [...prev.expenseCategories, cat];
-      const cardId = pickExpenseCardId(cardBalances, categories, prev.expenseMerchants, prev.cardId, quickSpendAnchorCardIdRef.current);
+      const cardId = pickExpenseCardId(cardBalances, categories, prev.expenseMerchants, prev.cardId, quickSpendAnchorCardIdRef.current, customStores);
       return { ...prev, expenseCategories: categories, cardId };
     });
   };
@@ -2731,7 +3068,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 {insightSearch && (
                   <div className="mt-6 space-y-3" aria-live="polite">
                     {(() => {
-                      const matches = getSmartMatches(insightSearch, 5);
+                      const matches = getSmartMatches(insightSearch, 5, customStores);
                       if (matches.length === 0) {
                         return (
                           <p className="rounded-[var(--cdv-r-md)] border border-white/15 bg-white/5 px-4 py-3.5 text-sm text-[var(--cdv-on-band-mute)]">
@@ -2852,7 +3189,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             {supporting.length === 0 ? (
                               <span className="cdv-badge cdv-badge--neutral">No coverage</span>
                             ) : (
-                              supporting.map((c) => <span key={c.id} className="cdv-badge cdv-badge--positive">{c.name}</span>)
+                              supporting.map((c) => {
+                                const onlyAt = storeLimitSummary(c);
+                                return <span key={c.id} className="cdv-badge cdv-badge--positive">{c.name}{onlyAt ? ` · ${onlyAt}` : ''}</span>;
+                              })
                             )}
                           </div>
                         </li>
@@ -2892,10 +3232,14 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                             </th>
                             {moneyCardBalances.map((card) => {
                               const covered = (card.derivedCats || []).includes(category);
+                              const onlyAt = storeLimitSummary(card);
+                              const coverLabel = onlyAt
+                                ? `${card.name} covers ${category} only at ${onlyAt}`
+                                : `${card.name} covers ${category}`;
                               return (
                                 <td key={`${category}-${card.id}`} className="p-2 text-center align-middle transition-colors duration-150 group-hover:bg-[var(--cdv-surface-sunken)]">
                                   {covered ? (
-                                    <CheckCircle2 className="mx-auto text-[var(--cdv-positive)]" size={18} aria-label={`${card.name} covers ${category}`} />
+                                    <CheckCircle2 className="mx-auto text-[var(--cdv-positive)]" size={18} aria-label={coverLabel} />
                                   ) : (
                                     <>
                                       <span className="mx-auto block h-1 w-1 rounded-full bg-[var(--cdv-hairline-heavy)]" aria-hidden />
@@ -3297,7 +3641,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     <button
                       type="button"
                       key={prog.id}
-                      onClick={() => setNewCard({ ...newCard, programId: prog.id, categories: [] })}
+                      onClick={() => {
+                        const categories = prog.id === 'CUSTOM'
+                          ? [...new Set((newCard.acceptedStores || []).map((name) => (merchantMeta(name, customStores) || KNOWN_MERCHANTS[name])?.cat).filter((cat) => CATEGORIES.includes(cat)))]
+                          : [];
+                        setNewCard({ ...newCard, programId: prog.id, categories });
+                      }}
                       aria-pressed={isSelected}
                       className="flex flex-col gap-0.5 rounded-[var(--cdv-r-md)] border p-3 text-left transition-colors duration-150"
                       style={isSelected
@@ -3345,19 +3694,72 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               </div>
             )}
 
-            <div>
-              <label htmlFor="cdv-card-link" className="cdv-label">Card link</label>
-              <input
-                id="cdv-card-link"
-                type="url"
-                inputMode="url"
-                value={newCard.cardLink || ''}
-                onChange={(e) => setNewCard({ ...newCard, cardLink: e.target.value })}
-                className="cdv-input"
-                placeholder="https://…"
-                dir="ltr"
+            {newCard.valueKind !== 'units' && (
+              <StoreLimitPicker
+                selected={newCard.acceptedStores || []}
+                customStores={customStores}
+                defaultCategory={(newCard.categories || [])[0] || 'Other'}
+                onAdd={(name, cat) => {
+                  setNewCard((prev) => {
+                    const stores = (prev.acceptedStores || []).some((s) => storeNameKey(s) === storeNameKey(name))
+                      ? prev.acceptedStores
+                      : [...(prev.acceptedStores || []), name];
+                    const categories = prev.programId === 'CUSTOM' && cat && CATEGORIES.includes(cat) && !(prev.categories || []).includes(cat)
+                      ? [...(prev.categories || []), cat]
+                      : prev.categories;
+                    return { ...prev, acceptedStores: stores, categories };
+                  });
+                }}
+                onCreate={(name, cat) => {
+                  rememberStore(name, cat);
+                  setNewCard((prev) => {
+                    const stores = (prev.acceptedStores || []).some((s) => storeNameKey(s) === storeNameKey(name))
+                      ? prev.acceptedStores
+                      : [...(prev.acceptedStores || []), name];
+                    const categories = prev.programId === 'CUSTOM' && cat && CATEGORIES.includes(cat) && !(prev.categories || []).includes(cat)
+                      ? [...(prev.categories || []), cat]
+                      : prev.categories;
+                    return { ...prev, acceptedStores: stores, categories };
+                  });
+                }}
+                onRemove={(name) => {
+                  setNewCard((prev) => ({
+                    ...prev,
+                    acceptedStores: (prev.acceptedStores || []).filter((s) => storeNameKey(s) !== storeNameKey(name)),
+                  }));
+                }}
               />
-              <p className="mt-2 text-xs text-[var(--cdv-mute)]">Optional. A button appears on the wallet card only when this balance link is saved.</p>
+            )}
+
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div>
+                <label htmlFor="cdv-card-link" className="cdv-label">Balance link</label>
+                <input
+                  id="cdv-card-link"
+                  type="url"
+                  inputMode="url"
+                  value={newCard.cardLink || ''}
+                  onChange={(e) => setNewCard({ ...newCard, cardLink: e.target.value })}
+                  className="cdv-input"
+                  placeholder="https://…"
+                  dir="ltr"
+                />
+                <p className="mt-2 text-xs text-[var(--cdv-mute)]">Optional. Shows a Check balance button on the card.</p>
+              </div>
+              <div>
+                <label htmlFor="cdv-store-list-link" className="cdv-label">Store list link</label>
+                <input
+                  id="cdv-store-list-link"
+                  type="url"
+                  inputMode="url"
+                  value={newCard.storeListLink || ''}
+                  onChange={(e) => setNewCard({ ...newCard, storeListLink: e.target.value })}
+                  className="cdv-input"
+                  placeholder="https://…"
+                  dir="ltr"
+                />
+                <p className="mt-2 text-xs text-[var(--cdv-mute)]">Optional. Shows a Store list button — the page of places this card can pay.</p>
+              </div>
             </div>
 
             <div className="space-y-3 rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline)] bg-[var(--cdv-surface-sunken)] p-4">
@@ -3584,6 +3986,9 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 {newCard.categories.length === 0 && (
                   <p className="mt-2.5 text-xs text-[var(--cdv-mute)]">Pick at least one category to save this card.</p>
                 )}
+                {(newCard.acceptedStores || []).length > 0 && newCard.categories.length > 0 && (
+                  <p className="mt-2.5 text-xs text-[var(--cdv-mute)]">Checkout offers this card only at the stores you picked, inside these categories.</p>
+                )}
               </fieldset>
             ) : (
               <div className="flex items-start gap-2.5 rounded-[var(--cdv-r-md)] border border-[var(--cdv-accent-border)] bg-[var(--cdv-accent-soft)] p-4">
@@ -3651,7 +4056,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   <input id="exp-retailer" type="search" autoComplete="off" value={merchantSearch} onChange={(e) => { setMerchantSearch(e.target.value); setShowMerchantSuggestions(true); }} onFocus={() => setShowMerchantSuggestions(true)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExpenseMerchantFreeText(); } }} className="cdv-input !pl-10" placeholder="e.g. Wolt, FOX…" />
                   {showMerchantSuggestions && merchantSearch && (
                     <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline-strong)] bg-[var(--cdv-surface)] shadow-[var(--cdv-shadow-lg)]">
-                      {getSmartMatches(merchantSearch).map(([name, data]) => (
+                      {getSmartMatches(merchantSearch, 15, customStores).map(([name, data]) => (
                         /* onMouseDown so selection lands before the input's blur hides the list. */
                         <button
                           type="button"
@@ -3664,7 +4069,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                           <span className="cdv-chip cdv-cat shrink-0" style={categoryHueStyle(data.cat)}>{data.cat}</span>
                         </button>
                       ))}
-                      {getSmartMatches(merchantSearch).length === 0 && <p className="p-3 text-center text-sm text-[var(--cdv-mute)]">No catalog match — use Add for a custom name.</p>}
+                      {getSmartMatches(merchantSearch, 15, customStores).length === 0 && <p className="p-3 text-center text-sm text-[var(--cdv-mute)]">No catalog match — use Add for a custom name.</p>}
                     </div>
                   )}
                 </div>
@@ -3697,7 +4102,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   <option value="" disabled>{expenseValueKind === 'units' ? 'Choose a card' : (!newExpense.expenseCategories?.length ? 'Choose a card (add categories to filter by rules)' : '-- Evaluated Cards --')}</option>
                   {sortedCardBalances.filter((card) => (expenseValueKind === 'units' ? isUnitCard(card) : !isUnitCard(card))).map((card) => {
                     const noCatsYet = !newExpense.expenseCategories?.length;
-                    const isAllowedByRules = noCatsYet || cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants);
+                    const isAllowedByRules = noCatsYet || cardMatchesExpenseSelection(card, newExpense.expenseCategories, newExpense.expenseMerchants, customStores);
                     const isEditingCurrent = editingExpenseId && card.id === newExpense.cardId;
                     const planAsOf = planDateFromInput(newExpense.scheduledFor);
                     const editingExpenseRow = editingExpenseId ? expenses.find((ex) => ex.id === editingExpenseId) : null;
@@ -3718,7 +4123,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     return <option key={card.id} value={card.id} disabled={!isSelectable}>{expiringTag}{card.name} — {formatShekels(rem)} available{ruleHint}</option>;
                   })}
                 </select>
-                {expenseValueKind !== 'units' && newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => !isUnitCard(c) && cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants)).length === 0 && <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--cdv-danger)]"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
+                {expenseValueKind !== 'units' && newExpense.expenseCategories?.length > 0 && cardBalances.filter((c) => !isUnitCard(c) && cardMatchesExpenseSelection(c, newExpense.expenseCategories, newExpense.expenseMerchants, customStores)).length === 0 && <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--cdv-danger)]"><ShieldAlert size={12} /> No valid cards for this combination.</p>}
               </div>
             </div>
 
