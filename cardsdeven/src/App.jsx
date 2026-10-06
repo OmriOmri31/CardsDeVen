@@ -28,7 +28,7 @@ import {
   CreditCard, LayoutDashboard, Receipt, Plus, Trash2, AlertCircle,
   CalendarDays, RefreshCw, Infinity as InfinityIcon, CheckCircle2,
   Edit2, Moon, Sun, PieChart, LogOut, Lock, Mail,
-  Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info, ExternalLink
+  Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info, ExternalLink, ChevronDown
 } from 'lucide-react';
 
 /** Default web app config (Firebase console → Project settings). Override with VITE_FIREBASE_* in .env for other envs. */
@@ -1146,6 +1146,127 @@ function WalletCreditPlastic({ balanceRemaining, balanceLimit, limitCaption = 'L
   );
 }
 
+function OpenWalletCard({ card, detailRef, onEdit, onDelete, onSpend, onSetBalance }) {
+  const units = isUnitCard(card);
+  const ruleData = RULE_TYPES[card.ruleType?.toUpperCase()] || RULE_TYPES.PERMANENT;
+  const progData = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
+  const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
+  const pool = Number(card.loaded) || 0;
+  const percentRemaining = pool > 0 ? Math.max(0, Math.min(100, (card.remaining / pool) * 100)) : 0;
+  const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
+  const cardBalanceUrl = normalizeCardLink(card.cardLink);
+  const behaviorLabel = cycleBadgeLabel(card);
+  const scheduleLine = recurringStatusLine(card);
+  const placeLabel = units ? (card.venue || 'Uses') : progData.name;
+  return (
+    <article
+      id="cdv-wallet-detail"
+      ref={detailRef}
+      className="cdv-panel cdv-wallet-detail flex flex-col gap-6 p-5 sm:p-6"
+      style={isExpiringSoon ? { borderColor: 'var(--cdv-warning)' } : undefined}
+    >
+      <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+        <WalletCreditPlastic
+          balanceRemaining={card.remaining}
+          balanceLimit={pool}
+          limitCaption={card.balanceOverride ? 'Current' : (units ? 'Loaded' : (card.ruleType === 'cycle' ? 'This cycle' : 'Loaded'))}
+          programName={placeLabel}
+          chromeGradient={chromeGradient}
+          ruleType={card.ruleType}
+          expiryDate={card.expiryDate}
+          isExpiringSoon={isExpiringSoon}
+          valueKind={units ? 'units' : 'money'}
+          unitLabel={card.unitLabel}
+        />
+        <div className="flex min-h-full flex-1 min-w-0 flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="cdv-display text-xl leading-snug break-words">{card.name}</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className={`cdv-badge ${isExpiringSoon ? 'cdv-badge--warning' : 'cdv-badge--neutral'}`}>
+                  <ruleData.icon size={11} className="shrink-0" aria-hidden />
+                  {card.ruleType === 'expires' && card.expiryDate
+                    ? (isExpiringSoon
+                      ? `${getDaysUntilExpiry(card.expiryDate)} days left`
+                      : `Expires ${formatDate(card.expiryDate)}`)
+                    : (behaviorLabel || ruleData.label)}
+                </span>
+                <span className="cdv-badge cdv-badge--neutral">{placeLabel}</span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button type="button" onClick={() => onEdit(card)} className="cdv-icon-btn" aria-label={`Edit ${card.name}`}><Edit2 size={16} aria-hidden /></button>
+              <button type="button" onClick={() => onDelete(card)} className="cdv-icon-btn cdv-icon-btn--danger" aria-label={`Delete ${card.name}`}><Trash2 size={16} aria-hidden /></button>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              {units
+                ? <span className="text-lg font-semibold text-[var(--cdv-ink)]">{formatUses(card.remaining, card.unitLabel)}</span>
+                : <Money value={card.remaining} className="text-lg font-semibold text-[var(--cdv-ink)]" />}
+              <span className="text-xs text-[var(--cdv-faint)]">of {units ? formatUses(pool, card.unitLabel) : formatShekels(pool)}</span>
+            </div>
+            <div
+              className="cdv-meter"
+              role="progressbar"
+              aria-label={units ? `${card.name}: ${formatUses(card.remaining, card.unitLabel)} remaining` : `${card.name} balance remaining`}
+              aria-valuenow={Math.round(percentRemaining)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div className={`cdv-meter__fill ${isExpiringSoon ? 'cdv-meter__fill--warning' : ''}`} style={{ width: `${percentRemaining}%` }} />
+            </div>
+            {scheduleLine ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{scheduleLine}</p> : null}
+            {balanceSetLine(card) ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{balanceSetLine(card)}</p> : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onSpend(card.id)} className="cdv-btn cdv-btn--primary">
+              <Zap size={16} className="shrink-0" aria-hidden />
+              {units ? 'Log a use' : 'Quick spend'}
+            </button>
+            <button type="button" onClick={() => onSetBalance(card)} className="cdv-btn cdv-btn--outline">
+              {units ? 'Set remaining' : 'Set balance'}
+            </button>
+            {cardBalanceUrl ? (
+              <a href={cardBalanceUrl} target="_blank" rel="noopener noreferrer" className="cdv-btn cdv-btn--outline">
+                <ExternalLink size={15} className="shrink-0" aria-hidden />
+                Check balance
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {units ? (
+        <p className="border-t border-[var(--cdv-hairline)] pt-4 text-sm text-[var(--cdv-mute)]">
+          Redeem as {card.unitLabel || 'uses'}{card.venue ? ` at ${card.venue}` : ''}.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 border-t border-[var(--cdv-hairline)] pt-4">
+          {card.derivedCats.map((cat) => (
+            <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
+              <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
+            </span>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function useMatchMedia(query) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const update = () => setMatches(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, [query]);
+  return matches;
+}
+
 const AI_CHAT_STORAGE_KEY = 'cardsdeven_ai_chat_v1';
 const AI_TIP_BAR_DISMISSED_KEY = 'cardsdeven_ai_tip_bar_dismissed_v1';
 const DEFAULT_AI_WELCOME_TEXT = 'היי! אני העוזר החכם שלך. תגיד לי מה אתה רוצה לקנות, ואמצא את המבצעים הכי שווים בשבילך! 😎';
@@ -1411,6 +1532,7 @@ export default function App() {
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [cards, setCards] = useState([]);
+  const [openWalletCardId, setOpenWalletCardId] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
   const [aiMessages, setAiMessages] = useState(() => loadAiChatFromStorage() ?? [{ role: 'model', text: DEFAULT_AI_WELCOME_TEXT }]);
@@ -1428,6 +1550,7 @@ export default function App() {
   const abortControllerRef = useRef(null);
   const aiRequestInFlightRef = useRef(false);
   const quickSpendAnchorCardIdRef = useRef(null);
+  const walletDetailRef = useRef(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [cardPendingDelete, setCardPendingDelete] = useState(null);
   const [balanceEditCardId, setBalanceEditCardId] = useState(null);
@@ -1648,6 +1771,12 @@ export default function App() {
     }, 0);
   }, [expenses, cards]);
   const expiringAlerts = useMemo(() => cardBalances.filter((c) => c.ruleType === 'expires' && c.remaining > 0 && getDaysUntilExpiry(c.expiryDate) <= 30).sort((a, b) => getDaysUntilExpiry(a.expiryDate) - getDaysUntilExpiry(b.expiryDate)), [cardBalances]);
+  const walletSplit = useMatchMedia('(min-width: 840px)');
+  const openWalletCard = cardBalances.find((c) => c.id === openWalletCardId) ?? null;
+  useEffect(() => {
+    if (walletSplit || !openWalletCardId || !walletDetailRef.current) return;
+    walletDetailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [openWalletCardId, walletSplit]);
 
   const fundsByCategory = useMemo(() => {
     const grouped = {};
@@ -2265,7 +2394,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
 
   return (
     <div
-      className={`${isDarkMode ? 'dark' : ''} font-sans ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-20'}`}
+      className={`${isDarkMode ? 'dark' : ''} font-sans bg-[var(--cdv-canvas)] ${activeTab === 'ai' ? 'flex min-h-0 max-h-[100dvh] flex-1 flex-col overflow-hidden' : 'min-h-screen flex-1 pb-20'}`}
     >
       <div
         className={`cdv-shell relative ${activeTab === 'ai' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-screen'}`}
@@ -2400,7 +2529,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
                 <div className="min-w-0">
                   <h2 className="cdv-display text-3xl">Wallet</h2>
-                  <p className="mt-1.5 text-[var(--cdv-mute)]">Your active gift cards, grants and benefit budgets.</p>
+                  <p className="mt-1.5 text-[var(--cdv-mute)]">Name and balance at a glance. Open a card for the rest.</p>
                 </div>
                 <button
                   type="button"
@@ -2421,114 +2550,53 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                  {cardBalances.map((card) => {
-                    const units = isUnitCard(card);
-                    const ruleData = RULE_TYPES[card.ruleType?.toUpperCase()] || RULE_TYPES.PERMANENT;
-                    const progData = PROGRAMS[card.programId || 'CUSTOM'] || PROGRAMS.CUSTOM;
-                    const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
-                    const pool = Number(card.loaded) || 0;
-                    const percentRemaining = pool > 0 ? Math.max(0, Math.min(100, (card.remaining / pool) * 100)) : 0;
-                    const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
-                    const cardBalanceUrl = normalizeCardLink(card.cardLink);
-                    const behaviorLabel = cycleBadgeLabel(card);
-                    const scheduleLine = recurringStatusLine(card);
-                    const placeLabel = units ? (card.venue || 'Uses') : progData.name;
-                    return (
-                      <article
-                        key={card.id}
-                        className="cdv-panel flex flex-col gap-6 p-6"
-                        style={isExpiringSoon ? { borderColor: 'var(--cdv-warning)' } : undefined}
-                      >
-                        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                          <WalletCreditPlastic
-                            balanceRemaining={card.remaining}
-                            balanceLimit={pool}
-                            limitCaption={card.balanceOverride ? 'Current' : (units ? 'Loaded' : (card.ruleType === 'cycle' ? 'This cycle' : 'Loaded'))}
-                            programName={placeLabel}
-                            chromeGradient={chromeGradient}
-                            ruleType={card.ruleType}
-                            expiryDate={card.expiryDate}
-                            isExpiringSoon={isExpiringSoon}
-                            valueKind={units ? 'units' : 'money'}
-                            unitLabel={card.unitLabel}
-                          />
-                          <div className="flex min-h-full flex-1 min-w-0 flex-col gap-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <h3 className="cdv-display text-xl leading-snug break-words">{card.name}</h3>
-                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  <span className={`cdv-badge ${isExpiringSoon ? 'cdv-badge--warning' : 'cdv-badge--neutral'}`}>
-                                    <ruleData.icon size={11} className="shrink-0" aria-hidden />
-                                    {card.ruleType === 'expires' && card.expiryDate
-                                      ? (isExpiringSoon
-                                        ? `${getDaysUntilExpiry(card.expiryDate)} days left`
-                                        : `Expires ${formatDate(card.expiryDate)}`)
-                                      : (behaviorLabel || ruleData.label)}
-                                  </span>
-                                  <span className="cdv-badge cdv-badge--neutral">{placeLabel}</span>
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-0.5">
-                                <button type="button" onClick={() => startEditCard(card)} className="cdv-icon-btn" aria-label={`Edit ${card.name}`}><Edit2 size={16} aria-hidden /></button>
-                                <button type="button" onClick={() => requestDeleteCard(card)} className="cdv-icon-btn cdv-icon-btn--danger" aria-label={`Delete ${card.name}`}><Trash2 size={16} aria-hidden /></button>
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="mb-2 flex items-baseline justify-between gap-3">
-                                {units
-                                  ? <span className="text-lg font-semibold text-[var(--cdv-ink)]">{formatUses(card.remaining, card.unitLabel)}</span>
-                                  : <Money value={card.remaining} className="text-lg font-semibold text-[var(--cdv-ink)]" />}
-                                <span className="text-xs text-[var(--cdv-faint)]">of {units ? formatUses(pool, card.unitLabel) : formatShekels(pool)}</span>
-                              </div>
-                              <div
-                                className="cdv-meter"
-                                role="progressbar"
-                                aria-label={units ? `${card.name}: ${formatUses(card.remaining, card.unitLabel)} remaining` : `${card.name} balance remaining`}
-                                aria-valuenow={Math.round(percentRemaining)}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                              >
-                                <div className={`cdv-meter__fill ${isExpiringSoon ? 'cdv-meter__fill--warning' : ''}`} style={{ width: `${percentRemaining}%` }} />
-                              </div>
-                              {scheduleLine ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{scheduleLine}</p> : null}
-                              {balanceSetLine(card) ? <p className="mt-2 text-xs leading-relaxed text-[var(--cdv-mute)]">{balanceSetLine(card)}</p> : null}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                              <button type="button" onClick={() => startQuickExpense(card.id)} className="cdv-btn cdv-btn--primary">
-                                <Zap size={16} className="shrink-0" aria-hidden />
-                                {units ? 'Log a use' : 'Quick spend'}
-                              </button>
-                              <button type="button" onClick={() => startSetBalance(card)} className="cdv-btn cdv-btn--outline">
-                                {units ? 'Set remaining' : 'Set balance'}
-                              </button>
-                              {cardBalanceUrl ? (
-                                <a href={cardBalanceUrl} target="_blank" rel="noopener noreferrer" className="cdv-btn cdv-btn--outline">
-                                  <ExternalLink size={15} className="shrink-0" aria-hidden />
-                                  Check balance
-                                </a>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                        {units ? (
-                          <p className="border-t border-[var(--cdv-hairline)] pt-4 text-sm text-[var(--cdv-mute)]">
-                            Redeem as {card.unitLabel || 'uses'}{card.venue ? ` at ${card.venue}` : ''}.
-                          </p>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5 border-t border-[var(--cdv-hairline)] pt-4">
-                            {card.derivedCats.map((cat) => (
-                              <span key={cat} className="cdv-chip cdv-cat" style={categoryHueStyle(cat)}>
-                                <span aria-hidden>{CATEGORY_ICONS[cat]}</span> {cat}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </article>
-                    );
-                  })}
+                <div className={`cdv-wallet${walletSplit && openWalletCard ? ' cdv-wallet--split' : ''}`}>
+                <ul className="cdv-wallet-list" aria-label="Your cards">
+                    {cardBalances.map((card) => {
+                      const units = isUnitCard(card);
+                      const chromeGradient = buildPlasticGradientFromHex(card.plasticAccentHex) || (WALLET_CARD_CHROME[card.programId] || WALLET_CARD_CHROME.CUSTOM);
+                      const isExpiringSoon = card.ruleType === 'expires' && getDaysUntilExpiry(card.expiryDate) <= 30;
+                      const isOpen = openWalletCardId === card.id;
+                      return (
+                        <li key={card.id} className="cdv-wallet-entry">
+                          <button
+                            type="button"
+                            className={`cdv-wallet-item${isOpen ? ' cdv-wallet-item--open' : ''}${isExpiringSoon ? ' cdv-wallet-item--soon' : ''}`}
+                            aria-expanded={isOpen}
+                            aria-controls={isOpen ? 'cdv-wallet-detail' : undefined}
+                            onClick={() => setOpenWalletCardId(isOpen ? null : card.id)}
+                          >
+                            <span className="cdv-wallet-item__swatch" style={{ background: chromeGradient }} aria-hidden />
+                            <span className="cdv-wallet-item__name" title={card.name}>{card.name}</span>
+                            {units
+                              ? <span className="cdv-wallet-item__balance">{formatUses(card.remaining, card.unitLabel)}</span>
+                              : <Money value={card.remaining} className="cdv-wallet-item__balance" />}
+                            <ChevronDown size={16} className={`cdv-wallet-item__chevron${isOpen ? ' is-open' : ''}`} aria-hidden />
+                          </button>
+                          {!walletSplit && isOpen && (
+                            <OpenWalletCard
+                              card={card}
+                              detailRef={walletDetailRef}
+                              onEdit={startEditCard}
+                              onDelete={requestDeleteCard}
+                              onSpend={startQuickExpense}
+                              onSetBalance={startSetBalance}
+                            />
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {walletSplit && openWalletCard && (
+                    <OpenWalletCard
+                      card={openWalletCard}
+                      detailRef={walletDetailRef}
+                      onEdit={startEditCard}
+                      onDelete={requestDeleteCard}
+                      onSpend={startQuickExpense}
+                      onSetBalance={startSetBalance}
+                    />
+                  )}
                 </div>
               )}
             </div>
