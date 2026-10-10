@@ -44,17 +44,23 @@ jobs:
       - name: Run Behatsdaa scraper
         id: behatsdaa
         continue-on-error: true
-        run: python -u scraper_behatsdaa.py
+        run: |
+          echo "Behatsdaa scraper starting"
+          stdbuf -oL -eL python -u scraper_behatsdaa.py
 
       - name: Run Pais Plus scraper
         id: pais
         continue-on-error: true
-        run: python -u scraper_pais_plus.py
+        run: |
+          echo "Pais Plus scraper starting"
+          stdbuf -oL -eL python -u scraper_pais_plus.py
 
       - name: Run DreamCard scraper
         id: dreamcard
         continue-on-error: true
-        run: python -u scrape_dreamcard.py
+        run: |
+          echo "DreamCard scraper starting"
+          stdbuf -oL -eL python -u scrape_dreamcard.py
 
       - name: Commit and push scraped deals
         if: always()
@@ -62,8 +68,13 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add cardsdeven/public/behatsdaa_deals.json cardsdeven/public/pais_plus_deals.json cardsdeven/public/dreamcard_deals.json
-          git commit -m "chore: auto-update scraped deals" || echo "No changes to commit"
-          git push
+          if git diff --cached --quiet; then
+            echo "No deal changes to commit"
+          else
+            git commit -m "chore: auto-update scraped deals"
+            git pull --rebase origin main
+            git push
+          fi
 
       - name: Fail if a scraper failed
         if: always() && (steps.behatsdaa.outcome == 'failure' || steps.pais.outcome == 'failure' || steps.dreamcard.outcome == 'failure')

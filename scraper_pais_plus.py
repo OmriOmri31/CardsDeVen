@@ -107,10 +107,26 @@ def scroll_page_for_lazy_cards(page, rounds: int = 10) -> None:
     page.wait_for_timeout(200)
 
 
+def goto_with_retries(page, url: str, *, label: str, attempts: int = 3, timeout_ms: int = 90000) -> None:
+    """Retry a slow navigation. One 60s timeout used to fail the whole Pais Plus run."""
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        print(f"{label}opening {url} (attempt {attempt}/{attempts})", flush=True)
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            print(f"{label}loaded", flush=True)
+            return
+        except Exception as exc:
+            last_error = exc
+            print(f"{label}load failed: {exc}", flush=True)
+            if attempt < attempts:
+                page.wait_for_timeout(4000)
+    raise last_error or RuntimeError(f"Failed to open {url}")
+
+
 def discover_category_links(page) -> list[tuple[str, str]]:
     """Return list of (category_url, genre_label) from all mySwiperN carousels."""
-    print(f"Loading landing page: {PAIS_LANDING}")
-    page.goto(PAIS_LANDING, wait_until="domcontentloaded", timeout=60000)
+    goto_with_retries(page, PAIS_LANDING, label="Pais Plus landing: ")
     page.wait_for_timeout(2500)
     try:
         page.wait_for_selector("div.swiper[class*='mySwiper']", timeout=15000)
@@ -168,11 +184,11 @@ def inner_text_safe(locator, timeout: float = 2000) -> str:
 
 def scrape_category_page(page, category_url: str, genre: str) -> list[dict]:
     deals: list[dict] = []
-    print(f"  Category ({genre}): {category_url}")
+    print(f"  Category ({genre}): {category_url}", flush=True)
     try:
-        page.goto(category_url, wait_until="domcontentloaded", timeout=60000)
+        goto_with_retries(page, category_url, label="  ", attempts=2, timeout_ms=90000)
     except Exception as e:
-        print(f"  Skip (load error): {e}")
+        print(f"  Skip (load error): {e}", flush=True)
         return deals
 
     page.wait_for_timeout(1500)
