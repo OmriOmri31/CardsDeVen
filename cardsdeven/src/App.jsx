@@ -25,6 +25,7 @@ import {
   remainingForPlan,
   specFromRecurringForm,
 } from './cardCycle';
+import { merchantOnSwishPlus } from './swishPlusStores';
 import {
   CreditCard, LayoutDashboard, Receipt, Plus, Trash2, AlertCircle,
   CalendarDays, RefreshCw, Infinity as InfinityIcon, CheckCircle2,
@@ -309,8 +310,33 @@ const PROGRAMS = {
   TP: { id: 'TP', name: 'Tav Plus', type: 'network', color: 'bg-gradient-to-br from-emerald-400 to-emerald-600', description: 'Carrefour & partners.' },
   DC: { id: 'DC', name: 'Dream Card', type: 'network', color: 'bg-gradient-to-br from-slate-800 to-black', description: 'Fox Group brands only.' },
   FLEX: { id: 'FLEX', name: 'FlexBenefits', type: 'open_loop', color: 'bg-gradient-to-br from-indigo-500 to-purple-600', description: 'Visa. Conditional on employer.' },
+  SW: {
+    id: 'SW',
+    name: 'Swish Plus',
+    type: 'network',
+    color: 'bg-gradient-to-br from-violet-500 to-purple-900',
+    description: 'Multi-brand gift card. Stacks store sales.',
+    defaultName: 'Swish Plus',
+    balanceLink: 'https://swish.co.il/home/balance-inquiry',
+    storeListLink: 'https://swish.co.il/home/all-gifts-giftcard/product-105380',
+    note: 'Check balance with the 16-digit card number. Usable until the balance is gone, for 5 years from purchase. Stacks the store’s own sales. Not valid for club discounts, loyalty points, outlet stores, tips, or Cinema City concession stands. Restaurants are dine-in unless that store says otherwise.',
+    advisorNote: 'SWISH PLUS gift card from Swish (swish.co.il, formerly Nofshonit). Multi-use until empty, 5 years from purchase. Stacks the store’s own promotions only — not club-member discounts, loyalty points, outlet stores, tips, or Cinema City concession stands. Restaurants are dine-in unless the store list says otherwise. Balance check needs the 16-digit card number.',
+  },
   CUSTOM: { id: 'CUSTOM', name: 'Custom / Standard Card', type: 'custom', color: 'bg-gradient-to-br from-slate-400 to-slate-600', description: 'Manually pick categories.' }
 };
+
+/** Fill the balance and store-list fields when a program ships with official pages. Keeps a link the user typed themselves. */
+function applyProgramLinkDefaults(prev, programId) {
+  const prog = PROGRAMS[programId] || PROGRAMS.CUSTOM;
+  const prevProg = PROGRAMS[prev.programId] || PROGRAMS.CUSTOM;
+  const next = { ...prev };
+  const balance = String(prev.cardLink || '').trim();
+  const stores = String(prev.storeListLink || '').trim();
+  if (!balance || balance === (prevProg.balanceLink || '')) next.cardLink = prog.balanceLink || '';
+  if (!stores || stores === (prevProg.storeListLink || '')) next.storeListLink = prog.storeListLink || '';
+  if (!String(prev.name || '').trim() && prog.defaultName) next.name = prog.defaultName;
+  return next;
+}
 
 /** Credit-card plastic gradient per program (Cibus = salmon pink). */
 const WALLET_CARD_CHROME = {
@@ -324,6 +350,7 @@ const WALLET_CARD_CHROME = {
   TP: 'linear-gradient(135deg, #4ade80 0%, #059669 100%)',
   DC: 'linear-gradient(135deg, #1e293b 0%, #020617 100%)',
   FLEX: 'linear-gradient(135deg, #6366f1 0%, #6d28d9 100%)',
+  SW: 'linear-gradient(135deg, #8b58fa 0%, #47007a 100%)',
   CUSTOM: 'linear-gradient(135deg, #94a3b8 0%, #475569 100%)',
 };
 
@@ -894,6 +921,11 @@ const checkCompatibility = (card, category, merchantName) => {
     if (merchData && merchData.networks.includes('CB')) return { allowed: true, reason: "Explicit Partner" };
     return { allowed: false, reason: "Not in partner network" };
   }
+  if (pId === 'SW') {
+    if (!merchantName) return { allowed: false, reason: 'Specific merchant required' };
+    if (merchantOnSwishPlus(merchantName, merchData)) return { allowed: true, reason: 'Swish Plus partner' };
+    return { allowed: false, reason: 'Not on the Swish Plus list' };
+  }
   if (['BM', 'GT', 'TH', 'TP', 'DC'].includes(pId)) {
     if (!merchantName) return { allowed: false, reason: "Specific merchant required" };
     if (merchData && merchData.networks.includes(pId)) return { allowed: true, reason: `Explicit Partner` };
@@ -956,8 +988,8 @@ const getDerivedCategories = (card) => {
 
   const derived = new Set();
   if (pId === 'CB') derived.add("Food Chains & Restaurants");
-  Object.values(KNOWN_MERCHANTS).forEach((m) => {
-    if (m.networks.includes(pId)) derived.add(m.cat);
+  Object.entries(KNOWN_MERCHANTS).forEach(([name, m]) => {
+    if (pId === 'SW' ? merchantOnSwishPlus(name, m) : m.networks.includes(pId)) derived.add(m.cat);
   });
   return Array.from(derived);
 };
@@ -1430,6 +1462,7 @@ function OpenWalletCard({ card, detailRef, onEdit, onDelete, onSpend, onSetBalan
               </a>
             ) : null}
           </div>
+          {progData.note ? <p className="text-xs leading-relaxed text-[var(--cdv-mute)]">{progData.note}</p> : null}
         </div>
       </div>
       {units ? (
@@ -1663,9 +1696,13 @@ function walletLineForAdvisor(card) {
 }
 
 function appendStoreListLink(card, line) {
+  const note = PROGRAMS[card.programId]?.advisorNote;
+  let next = note ? `${line} [${note}]` : line;
+  const balance = normalizeCardLink(card.cardLink);
+  if (balance) next += ` [BALANCE CHECK page: ${balance}]`;
   const storeList = normalizeCardLink(card.storeListLink);
-  if (!storeList) return line;
-  return `${line} [STORE LIST of places this card can pay: ${storeList}]`;
+  if (storeList) next += ` [STORE LIST of places this card can pay: ${storeList}]`;
+  return next;
 }
 
 function balanceSetLine(card) {
@@ -4107,7 +4144,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                         const categories = prog.id === 'CUSTOM'
                           ? [...new Set((newCard.acceptedStores || []).map((name) => (merchantMeta(name, customStores) || KNOWN_MERCHANTS[name])?.cat).filter((cat) => CATEGORIES.includes(cat)))]
                           : [];
-                        setNewCard({ ...newCard, programId: prog.id, categories });
+                        setNewCard((prev) => ({ ...applyProgramLinkDefaults(prev, prog.id), programId: prog.id, categories }));
                       }}
                       aria-pressed={isSelected}
                       className="flex flex-col gap-0.5 rounded-[var(--cdv-r-md)] border p-3 text-left transition-colors duration-150"
@@ -4457,6 +4494,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 <Info className="mt-0.5 shrink-0 text-[var(--cdv-accent)]" size={17} aria-hidden />
                 <p className="text-sm text-[var(--cdv-body)]">
                   Categories and accepted merchants for <span className="font-semibold text-[var(--cdv-ink)]">{PROGRAMS[newCard.programId].name}</span> are kept up to date automatically.
+                  {PROGRAMS[newCard.programId].note ? ` ${PROGRAMS[newCard.programId].note}` : ''}
                 </p>
               </div>
             )}
