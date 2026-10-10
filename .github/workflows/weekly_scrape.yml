@@ -1,11 +1,11 @@
-name: Daily scrapers
+name: Weekly scrapers
 
 on:
   schedule:
-    # 12:45 Israel (UTC+3). GitHub cron is UTC, so this is 09:45 UTC.
+    # Every Sunday at 12:45 Israel (UTC+3). GitHub cron is UTC, so this is 09:45 UTC.
     # After the winter clock change (UTC+2) this runs at 11:45 local.
-    - cron: '45 9 * * *'
-  workflow_dispatch: # This allows you to click a button to run it manually
+    - cron: '45 9 * * 0'
+  workflow_dispatch: # Run manually from GitHub on a computer or phone
 
 jobs:
   scrape-and-deploy:
