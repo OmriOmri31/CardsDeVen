@@ -1,9 +1,13 @@
 """
 מנוי פיס (Pais Plus) — category & deal scraper.
 
-Entry: https://www.pais.co.il/info/paisplus.aspx (no login).
-Discovers .swiper.mySwiper1, .mySwiper2, ... collects category links from slides
-(deduped), then scrapes each paisplus.co.il category page for a.card-item deals.
+Entry: a Pais Plus category page (no login). The full menu tree is in
+window.__PRELOADED_STATE__. Leaf categories are scraped for a.card-item deals.
+
+The old entry, https://www.pais.co.il/info/paisplus.aspx, is a Webflow page whose
+synchronous scripts often never fire DOMContentLoaded from GitHub-hosted runners.
+That made page.goto hit its timeout (60s, then 90s x retries) and the run exited
+before writing pais_plus_deals.json.
 
 Output: cardsdeven/public/pais_plus_data.json
   - deals: [{ "m", "c": "PAIS_PLUS", "d", ... }] compatible with App.jsx DISCOUNTS_DATA
@@ -52,19 +56,32 @@ try:
 except ImportError:
     pass
 
-PAIS_LANDING = "https://www.pais.co.il/info/paisplus.aspx"
+# Any category page embeds the full menu. 374 is a small public leaf, used only as the seed.
+PAIS_MENU_SEED = "https://paisplus.co.il/category/374"
 PAIS_PLUS_ORIGIN = "https://paisplus.co.il"
 OUTPUT_PATH = os.path.join("cardsdeven", "public", "pais_plus_data.json")
 DEALS_PUBLIC_PATH = os.path.join("cardsdeven", "public", "pais_plus_deals.json")
 CLUB_CODE = "PAIS_PLUS"
 
+# Trackers and fonts that have stalled navigation. The deal HTML does not need them.
+_BLOCK_RESOURCE_TYPES = {"image", "media", "font"}
+_BLOCK_HOST_PARTS = (
+    "taboola.com",
+    "outbrain.com",
+    "clarity.ms",
+    "facebook.net",
+    "facebook.com",
+    "doubleclick.net",
+    "google-analytics.com",
+    "googletagmanager.com",
+    "googleadservices.com",
+    "glassix.com",
+    "hotjar.com",
+)
+
 # Gemini embed_content allows at most 100 texts per request (BatchEmbedContentsRequest).
 _EMBED_BATCH = min(100, max(1, int(os.environ.get("PAIS_EMBED_BATCH_SIZE", "100"))))
 _EMBED_SLEEP = max(0.0, float(os.environ.get("PAIS_EMBED_SLEEP_SEC", "2")))
-
-# Safety cap so a site change does not loop forever
-MAX_SWIPERS = 30
-
 
 def strip_utms(url: str) -> str:
     if not url:
@@ -107,71 +124,112 @@ def scroll_page_for_lazy_cards(page, rounds: int = 10) -> None:
     page.wait_for_timeout(200)
 
 
-def goto_with_retries(page, url: str, *, label: str, attempts: int = 3, timeout_ms: int = 90000) -> None:
-    """Retry a slow navigation. One 60s timeout used to fail the whole Pais Plus run."""
+def install_request_filter(context) -> None:
+    """Drop images, fonts, and ad pixels so a hanging tracker cannot stall navigation."""
+
+    def handle(route) -> None:
+        request = route.request
+        if request.resource_type in _BLOCK_RESOURCE_TYPES:
+            route.abort()
+            return
+        host = (urlsplit(request.url).hostname or "").lower()
+        if any(part in host for part in _BLOCK_HOST_PARTS):
+            route.abort()
+            return
+        route.continue_()
+
+    context.route("**/*", handle)
+
+
+def clean_label(text: str) -> str:
+    text = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]", "", text or "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def goto_with_retries(page, url: str, *, label: str, attempts: int = 3, timeout_ms: int = 45000) -> None:
+    """Retry navigation. `commit` returns when the document starts, before third-party scripts."""
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         print(f"{label}opening {url} (attempt {attempt}/{attempts})", flush=True)
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            page.goto(url, wait_until="commit", timeout=timeout_ms)
             print(f"{label}loaded", flush=True)
             return
         except Exception as exc:
             last_error = exc
             print(f"{label}load failed: {exc}", flush=True)
             if attempt < attempts:
-                page.wait_for_timeout(4000)
+                page.wait_for_timeout(2000)
     raise last_error or RuntimeError(f"Failed to open {url}")
 
 
+def _walk_menu(nodes, out: list[tuple[str, str]], seen: set[str]) -> None:
+    """Collect leaf categories. Parents are aggregates (thousands of deals, paginated)."""
+    for node in nodes or []:
+        if not isinstance(node, dict):
+            continue
+        children = node.get("categories") or []
+        if children:
+            _walk_menu(children, out, seen)
+            continue
+        cid = str(node.get("category_id") or "").strip()
+        name = clean_label(str(node.get("name") or ""))
+        if not cid or not name or cid in seen:
+            continue
+        if name.startswith("מועדפות"):
+            continue
+        seen.add(cid)
+        out.append((f"{PAIS_PLUS_ORIGIN}/category/{cid}", name))
+
+
+def _discover_from_dom(page) -> list[tuple[str, str]]:
+    rows = page.evaluate(
+        """() => {
+          const out = [];
+          const seen = new Set();
+          for (const a of document.querySelectorAll("a[href*='/category/']")) {
+            const href = a.getAttribute("href") || "";
+            const match = href.match(/\\/category\\/(\\d+)/);
+            if (!match || seen.has(match[1])) continue;
+            const text = (a.innerText || "").replace(/\\s+/g, " ").trim();
+            if (!text) continue;
+            seen.add(match[1]);
+            out.push({ href, text });
+          }
+          return out;
+        }"""
+    )
+    out: list[tuple[str, str]] = []
+    for row in rows or []:
+        name = clean_label(row.get("text") or "")
+        if not name or name.startswith("מועדפות"):
+            continue
+        cat_url = normalize_category_url(row.get("href") or "")
+        if cat_url:
+            out.append((cat_url, name))
+    return out
+
+
 def discover_category_links(page) -> list[tuple[str, str]]:
-    """Return list of (category_url, genre_label) from all mySwiperN carousels."""
-    goto_with_retries(page, PAIS_LANDING, label="Pais Plus landing: ")
-    page.wait_for_timeout(2500)
+    """Return (category_url, genre) for every public leaf in the Pais Plus menu."""
+    goto_with_retries(page, PAIS_MENU_SEED, label="Pais Plus menu: ")
     try:
-        page.wait_for_selector("div.swiper[class*='mySwiper']", timeout=15000)
-    except Exception:
-        print("Warning: no swiper found quickly; continuing anyway.")
+        page.wait_for_function(
+            "() => window.__PRELOADED_STATE__ && window.__PRELOADED_STATE__.config && window.__PRELOADED_STATE__.config.categories",
+            timeout=20000,
+        )
+        tree = page.evaluate("() => window.__PRELOADED_STATE__.config.categories")
+        out: list[tuple[str, str]] = []
+        _walk_menu(tree, out, set())
+        if out:
+            print(f"Discovered {len(out)} leaf categories from the Pais Plus menu.")
+            return out
+        print("Menu state had no leaf categories; reading links from the page.")
+    except Exception as exc:
+        print(f"Menu state unavailable ({exc}); reading links from the page.")
 
-    seen: dict[str, str] = {}
-
-    for n in range(1, MAX_SWIPERS + 1):
-        sel = f"div.swiper.mySwiper{n}"
-        loc = page.locator(sel)
-        if loc.count() == 0:
-            print(f"No {sel}; stopping swiper discovery at index {n - 1 or 'none'}.")
-            break
-
-        print(f"Scanning {sel} ...")
-        swiper = loc.first
-        slides = swiper.locator(".swiper-slide")
-        count = slides.count()
-        for i in range(count):
-            slide = slides.nth(i)
-            link = slide.locator('a[href*="paisplus.co.il"], a[href^="/"]').first
-            if link.count() == 0:
-                continue
-            href = link.get_attribute("href")
-            cat_url = normalize_category_url(href) if href else None
-            if not cat_url:
-                continue
-            genre = ""
-            try:
-                genre = slide.locator(".artist-title").first.inner_text(timeout=800).strip()
-            except Exception:
-                try:
-                    genre = link.locator("img").first.get_attribute("alt") or ""
-                    genre = genre.strip()
-                except Exception:
-                    genre = ""
-
-            if cat_url not in seen and genre:
-                seen[cat_url] = genre
-            elif cat_url not in seen:
-                seen[cat_url] = "כללי"
-
-    out = [(u, seen[u]) for u in seen]
-    print(f"Discovered {len(out)} unique category URLs.")
+    out = _discover_from_dom(page)
+    print(f"Discovered {len(out)} category URLs from page links.")
     return out
 
 
@@ -191,25 +249,23 @@ def scrape_category_page(page, category_url: str, genre: str) -> list[dict]:
         print(f"  Skip (load error): {e}", flush=True)
         return deals
 
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(800)
     try:
-        page.wait_for_selector("a.card-item", timeout=20000)
+        page.wait_for_selector("a.card-item", timeout=12000)
     except Exception:
         print("  No card-item on page; skipping.")
         return deals
 
-    scroll_page_for_lazy_cards(page, rounds=12)
+    try:
+        scroll_page_for_lazy_cards(page, rounds=6)
+    except Exception as exc:
+        print(f"  Scroll skipped: {exc}", flush=True)
 
     items = page.locator("a.card-item").all()
     print(f"  Found {len(items)} card-item anchors.")
 
     for item in items:
         try:
-            cls = item.get_attribute("class") or ""
-            if "category-page" not in cls and "regular" not in cls:
-                # Still accept generic card-item from listing pages
-                pass
-
             href = item.get_attribute("href") or ""
             product_url = absolutize_paisplus(href)
             data_id = item.get_attribute("data-id") or ""
@@ -393,6 +449,17 @@ def run_embed_deals_incremental(all_deals: list[dict]) -> list[dict]:
     return [filled[i] for i in range(n)]  # type: ignore[list-item]
 
 
+def previous_deal_count(json_path: str) -> int:
+    if not os.path.isfile(json_path):
+        return 0
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return 0
+    return len(data.get("deals") or [])
+
+
 def push_to_github() -> None:
     """Commit and push slim pais_plus_deals.json (vectors stay in local pais_plus_data.json only)."""
     if os.environ.get("SKIP_GIT_PUSH", "").strip().lower() in ("1", "true", "yes"):
@@ -426,7 +493,7 @@ def main() -> int:
         except Exception:
             pass
 
-    parser = argparse.ArgumentParser(description="Scrape Pais Plus deals from pais.co.il landing carousels.")
+    parser = argparse.ArgumentParser(description="Scrape Pais Plus deals from the paisplus.co.il menu.")
     parser.add_argument("--visible", action="store_true", help="Show browser window")
     parser.add_argument(
         "--no-embed",
@@ -451,6 +518,7 @@ def main() -> int:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
                 viewport={"width": 1400, "height": 900},
             )
+            install_request_filter(context)
             page = context.new_page()
             Stealth().apply_stealth_sync(page)
             print("Pais Plus: Chromium is open", flush=True)
@@ -468,27 +536,46 @@ def main() -> int:
         all_deals = dedupe_deals(all_deals)
         print(f"\nTotal unique deals: {len(all_deals)}")
 
-        payload: dict = {
-            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "source": "pais_plus",
-            "deals": all_deals,
-        }
+        if not all_deals:
+            print("No deals scraped; existing files were left unchanged.")
+            exit_code = 1
+        else:
+            previous = previous_deal_count(DEALS_PUBLIC_PATH)
+            if previous >= 80 and len(all_deals) < int(previous * 0.4):
+                print(
+                    f"Refusing to replace {previous} deals with {len(all_deals)}. "
+                    "Existing files were left unchanged."
+                )
+                exit_code = 1
+            else:
+                payload: dict = {
+                    "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "source": "pais_plus",
+                    "deals": all_deals,
+                }
+                slim = {
+                    "last_updated": payload["last_updated"],
+                    "source": "pais_plus",
+                    "deals": all_deals,
+                }
+                os.makedirs(os.path.dirname(OUTPUT_PATH) or ".", exist_ok=True)
+                # Publish the catalog before embeddings. A Gemini failure used to
+                # discard a finished scrape and leave the site on last week's deals.
+                with open(DEALS_PUBLIC_PATH, "w", encoding="utf-8") as f:
+                    json.dump(slim, f, ensure_ascii=False, indent=2)
+                print(f"Wrote {DEALS_PUBLIC_PATH} ({len(all_deals)} deals)")
 
-        if not args.no_embed and all_deals:
-            payload["vectors"] = run_embed_deals_incremental(all_deals)
-        elif args.no_embed:
-            print("\n--- Skipping embeddings (--no-embed) ---")
+                if not args.no_embed:
+                    try:
+                        payload["vectors"] = run_embed_deals_incremental(all_deals)
+                    except Exception as embed_exc:
+                        print(f"Embeddings failed; published deals anyway. {embed_exc}", flush=True)
+                else:
+                    print("\n--- Skipping embeddings (--no-embed) ---")
 
-        os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-        with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-
-        slim = {"last_updated": payload["last_updated"], "source": "pais_plus", "deals": all_deals}
-        with open(DEALS_PUBLIC_PATH, "w", encoding="utf-8") as f:
-            json.dump(slim, f, ensure_ascii=False, indent=2)
-
-        print(f"Wrote {OUTPUT_PATH}")
-        print(f"Wrote {DEALS_PUBLIC_PATH} ({len(all_deals)} deals, embeddings only in full file)")
+                with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+                print(f"Wrote {OUTPUT_PATH}")
     except Exception as e:
         print(f"A critical error occurred: {e}")
         exit_code = 1
