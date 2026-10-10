@@ -428,6 +428,7 @@ def main() -> int:
     exit_code = 0
 
     try:
+        print("Pais Plus: launching Chromium", flush=True)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=not args.visible)
             context = browser.new_context(
@@ -436,10 +437,14 @@ def main() -> int:
             )
             page = context.new_page()
             Stealth().apply_stealth_sync(page)
+            print("Pais Plus: Chromium is open", flush=True)
 
             try:
                 categories = discover_category_links(page)
-                for cat_url, genre in categories:
+                total = len(categories)
+                print(f"Pais Plus: {total} categories to scrape", flush=True)
+                for index, (cat_url, genre) in enumerate(categories, start=1):
+                    print(f"Pais Plus: category {index}/{total}", flush=True)
                     all_deals.extend(scrape_category_page(page, cat_url, genre))
             finally:
                 browser.close()

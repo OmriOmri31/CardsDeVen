@@ -25,6 +25,17 @@ _EMBED_BATCH = min(100, max(1, int(os.environ.get("BEHATSDAA_EMBED_BATCH_SIZE", 
 _EMBED_SLEEP = max(0.0, float(os.environ.get("BEHATSDAA_EMBED_SLEEP_SEC", "2")))
 # Listing cards often use JS navigation (no href). Click + capture URL; set BEHATSDAA_SKIP_URL_CLICKES=1 to skip (faster, urls empty).
 
+def log(msg: str) -> None:
+    """Print immediately. GitHub Actions hides block-buffered Python output until the process exits."""
+    ts = time.strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    safe = line.encode(encoding, errors="backslashreplace").decode(encoding, errors="backslashreplace")
+    print(safe, flush=True)
+
+
+log("Behatsdaa process started")
+
 # Load .env from repo root and from cardsdeven/ (GEMINI_API_KEY, BEHATSDAA_ID, etc.)
 load_dotenv(os.path.join(_REPO_ROOT, '.env'))
 load_dotenv(os.path.join(_REPO_ROOT, 'cardsdeven', '.env'))
@@ -62,9 +73,11 @@ if not BEHATSDAA_ID:
         'or export it in the shell (GitHub Actions: repository secret BEHATSDAA_ID).'
     )
 
-require_gemini_keys()
+log(f"Gemini embedding keys available: {len(require_gemini_keys())}")
 
+log("Connecting to Firebase")
 _init_firebase_admin()
+log("Firebase ready")
 _otp_path = os.environ.get('FIREBASE_OTP_REF', 'secret_otp_drop_zone_xyz123').strip() or 'secret_otp_drop_zone_xyz123'
 otp_ref = db.reference(_otp_path)
 
@@ -107,13 +120,16 @@ TARGET_URLS = [
 
 def get_new_otp(start_time, timeout_seconds=120):
     end_time = time.time() + timeout_seconds
-    print(f"Polling Firebase for OTP (Timeout: {timeout_seconds}s)...")
+    log(f"Waiting for a login code in Firebase (up to {timeout_seconds}s)")
     while time.time() < end_time:
         data = otp_ref.get()
         if data and 'timestamp' in data and 'code' in data:
             if int(data['timestamp']) > start_time:
+                log("Login code received")
                 return data['code']
-        time.sleep(5) 
+        left = int(end_time - time.time())
+        log(f"Still waiting for the login code ({left}s left)")
+        time.sleep(5)
     raise Exception("Timeout: No new OTP received.")
 
 def push_to_github():
@@ -305,9 +321,9 @@ def _embed_batch_with_retry_behatsdaa(texts):
 
 def generate_embeddings(nested_data):
     """Vectors for RAG; reuses embeddings from existing data.json when deal text/url unchanged."""
-    print("\n--- Generating AI Search Vectors (incremental) ---")
+    log("Generating search vectors")
     flat_deals = _flatten_behatsdaa(nested_data)
-    print(f"Total deals (flattened): {len(flat_deals)}")
+    log(f"Flattened deals: {len(flat_deals)}")
 
     cache = _load_behatsdaa_embedding_cache(DATA_JSON_PATH)
     filled = [None] * len(flat_deals)
@@ -333,13 +349,13 @@ def generate_embeddings(nested_data):
             pending_indices.append(i)
 
     need_api = len(flat_deals) - reused
-    print(f"Embeddings: {reused} reused from cache, {need_api} require API")
+    log(f"Embeddings: {reused} reused from cache, {need_api} need the API")
 
     for b_start in range(0, len(pending_indices), _EMBED_BATCH):
         batch_idx = pending_indices[b_start : b_start + _EMBED_BATCH]
         batch_fds = [flat_deals[i] for i in batch_idx]
         texts = [fd["search_text"] for fd in batch_fds]
-        print(f"  API batch: {len(texts)} texts …")
+        log(f"  Embedding batch: {len(texts)} texts")
         response = _embed_batch_with_retry_behatsdaa(texts)
         for j, embedding in enumerate(response.embeddings):
             gi = batch_idx[j]
@@ -354,7 +370,7 @@ def generate_embeddings(nested_data):
     if missing:
         raise RuntimeError(f"Missing embeddings at indices {missing[:15]}")
 
-    print("Vector generation complete!")
+    log("Vector generation complete")
     return filled
 
 # ==========================================
@@ -465,7 +481,7 @@ def _capture_sale_url_via_click(page, card, listing_url: str) -> str:
         page.wait_for_load_state("networkidle", timeout=35000)
         page.wait_for_timeout(500)
     except Exception as exc:
-        print(f"  go_back after URL capture failed ({exc}); reloading listing …")
+        log(f"  Back button failed ({exc}); reloading the listing")
         try:
             page.goto(listing_url, wait_until="networkidle", timeout=45000)
             page.wait_for_timeout(800)
@@ -475,18 +491,19 @@ def _capture_sale_url_via_click(page, card, listing_url: str) -> str:
     return _normalize_behatsdaa_href(captured)
 
 
-def scrape_page_data(page, url, master_data):
-    print(f"\nScanning: {url}")
+def scrape_page_data(page, url, master_data, *, page_index=0, page_total=0):
+    prefix = f"Page {page_index}/{page_total}: " if page_total else ""
+    log(f"{prefix}opening {url}")
     try:
         page.goto(url, wait_until="networkidle", timeout=45000)
     except Exception as e:
-        print(f"Skipping {url} - Failed to load: {e}")
+        log(f"{prefix}skipped, page did not load ({e})")
         return
 
     if url == "https://www.behatsdaa.org.il/":
         try:
             page.wait_for_selector('img.logo-item.cursor-pointer[alt="לוגו בהצדעה"]', timeout=5000)
-            print("Home page verified.")
+            log(f"{prefix}home page verified")
         except Exception:
             pass
 
@@ -496,7 +513,7 @@ def scrape_page_data(page, url, master_data):
         page.wait_for_timeout(3000)
         listing_url = page.url
         n = page.locator(".categories-container-item").count()
-        print(f"Found {n} sales on this page.")
+        log(f"{prefix}{n} sales on this page")
 
         for idx in range(n):
             card = page.locator(".categories-container-item").nth(idx)
@@ -507,9 +524,10 @@ def scrape_page_data(page, url, master_data):
 
                 href = _extract_href_from_dom(card)
                 if not href:
-                    if idx == 0 or (idx + 1) % 25 == 0:
-                        print(f"  Capturing URL via click ({idx + 1}/{n}) …")
+                    log(f"  sale {idx + 1}/{n}: {title or 'untitled'} — opening the card to read its link")
                     href = _capture_sale_url_via_click(page, card, listing_url)
+                elif idx == 0 or (idx + 1) % 10 == 0 or idx + 1 == n:
+                    log(f"  sale {idx + 1}/{n}: {title or 'untitled'}")
 
                 img_locator = card.locator(".categories-container-item-img").first
                 image_text = img_locator.get_attribute("title", timeout=1000)
@@ -536,11 +554,14 @@ def scrape_page_data(page, url, master_data):
                 if sale_item not in master_data[master_category][venue][show_name]:
                     master_data[master_category][venue][show_name].append(sale_item)
 
-            except Exception:
+            except Exception as exc:
+                log(f"  sale {idx + 1}/{n}: skipped ({type(exc).__name__})")
                 continue
+
+        log(f"{prefix}finished")
                 
     except Exception as e:
-        print(f"Error reading cards on {url}: {e}")
+        log(f"{prefix}error reading cards ({e})")
 
 # ==========================================
 # 5. MAIN EXECUTOR
@@ -548,12 +569,14 @@ def scrape_page_data(page, url, master_data):
 
 def run_scraper(headless_mode=False):
     start_time = int(time.time())
-    print(f"Starting Scraper in {'HEADLESS' if headless_mode else 'VISIBLE'} mode...")
+    log(f"Starting browser ({'headless' if headless_mode else 'visible'})")
 
     all_scraped_data = {}
 
     with sync_playwright() as p:
+        log("Launching Chromium")
         browser = p.chromium.launch(headless=headless_mode)
+        log("Chromium is open")
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080}
@@ -562,22 +585,32 @@ def run_scraper(headless_mode=False):
         Stealth().apply_stealth_sync(page)
 
         try:
-            print("Navigating to Behatsdaa...")
+            log("Opening the login page")
             page.goto("https://www.behatsdaa.org.il/login", wait_until="networkidle")
+            log("Requesting a one-time code")
             page.fill("#loginIdWithShortCode", BEHATSDAA_ID) 
             page.click("button:has-text('שלחו לי קוד חד פעמי לנייד ולמייל')") 
             
             otp_code = get_new_otp(start_time)
             page.wait_for_selector("#shortCode", state="visible")
+            log("Typing the login code")
             page.locator("#shortCode").press_sequentially(otp_code, delay=150)
             page.wait_for_timeout(500)
             page.click("button:has-text('התחברות')") 
             
+            log("Waiting for the site after login")
             page.wait_for_timeout(5000) 
-            page.wait_for_load_state("networkidle") 
+            page.wait_for_load_state("networkidle")
+            log(f"Logged in. Scraping {len(TARGET_URLS)} pages")
 
-            for url in TARGET_URLS:
-                scrape_page_data(page, url, all_scraped_data)
+            for page_index, url in enumerate(TARGET_URLS, start=1):
+                scrape_page_data(
+                    page,
+                    url,
+                    all_scraped_data,
+                    page_index=page_index,
+                    page_total=len(TARGET_URLS),
+                )
 
             # Generate the math vectors for AI Search
             vector_deals = generate_embeddings(all_scraped_data)
@@ -597,10 +630,10 @@ def run_scraper(headless_mode=False):
             }
             with open("cardsdeven/public/behatsdaa_deals.json", "w", encoding="utf-8") as f:
                 json.dump(deals_light, f, ensure_ascii=False, indent=2)
-            print("\nScraping complete. Data saved to cardsdeven/public/data.json and behatsdaa_deals.json.")
+            log("Scraping complete. Saved data.json and behatsdaa_deals.json")
 
         except Exception as e:
-            print(f"A critical error occurred: {e}")
+            log(f"A critical error occurred: {e}")
         finally:
             browser.close()
             push_to_github()

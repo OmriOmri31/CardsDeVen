@@ -77,7 +77,8 @@ class GeminiEmbedPool:
         self._client: genai.Client | None = None
         print(
             f"Gemini embeddings: {len(self.keys)} key(s), "
-            "starting on key 1 (switch only after a quota 429)."
+            "starting on key 1 (switch only after a quota 429).",
+            flush=True,
         )
 
     def _client_for_current(self) -> genai.Client:
@@ -93,7 +94,8 @@ class GeminiEmbedPool:
         self._client = None
         print(
             f"  Gemini key {failed} returned a quota 429. "
-            f"Switching to key {self.index + 1}/{len(self.keys)}."
+            f"Switching to key {self.index + 1}/{len(self.keys)}.",
+            flush=True,
         )
         return True
 
@@ -117,7 +119,8 @@ class GeminiEmbedPool:
                     rate_attempt += 1
                     print(
                         f"  Gemini key {self.index + 1} rate limited "
-                        f"(attempt {rate_attempt}/{len(_RATE_DELAYS)}); sleeping {wait}s …"
+                        f"(attempt {rate_attempt}/{len(_RATE_DELAYS)}); sleeping {wait}s …",
+                        flush=True,
                     )
                     time.sleep(wait)
                     continue
