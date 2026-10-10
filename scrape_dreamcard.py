@@ -2,20 +2,24 @@
 DreamCard / DreamCard VIP promo scraper for CardsDeVen.
 
 Opens the public deals page, filters by DREAMCARD then Dreamcard VIP, screenshots each
-dc-deal tile, and uses Gemini vision (Hebrew-friendly) to extract merchant + offer text.
+dc-deal tile, and uses a vision model (Hebrew-friendly) to extract merchant + offer text.
 
 Output: cardsdeven/public/dreamcard_deals.json
 
 Banner tiles use lazy-loaded images: the script waits for .deal-img to decode / meaningful alt before
-reading alt or taking screenshots, so alt-only runs after Gemini 429 still get real copy when possible.
+reading alt or taking screenshots, so alt-only runs after a vision failure still get real copy when possible.
 
 Env:
-  GEMINI_API_KEY (required)
+  VISION_PROVIDER (optional, default deepseek-flash). Also: gemini, gpt-6-luna, moondream2, pixtral-12b
+  DEEPSEEK_API_KEY (required for the default deepseek-flash provider)
+  GEMINI_API_KEY (required only when VISION_PROVIDER=gemini)
+  OPENAI_API_KEY (required for gpt-6-luna)
   DREAMCARD_DEALS_URL (optional, default https://online.dreamcard.co.il/public/deals)
-  DREAMCARD_VISION_MODEL (optional, default gemini-2.5-flash)
+  DREAMCARD_VISION_MODEL (optional, default gemini-2.5-flash; Gemini only)
+  DREAMCARD_OUTPUT_PATH (optional override for the JSON output)
   DREAMCARD_HEADLESS (optional: set 1/true for headless; default is visible browser locally)
   DREAMCARD_SLOW_MO_MS (optional: Playwright slow_mo in ms, e.g. 200, for easier watching)
-  DREAMCARD_SKIP_VISION (optional: 1/true = never call Gemini; use img alt text only)
+  DREAMCARD_SKIP_VISION (optional: 1/true = never call the vision model; use img alt text only)
   DREAMCARD_VISION_MAX_ATTEMPTS (optional, default 5) — total tries per Gemini request on 429 exponential backoff
   DREAMCARD_VISION_429_BASE_SEC (optional, default 5) — first wait after 429 is this many seconds; then 2×, 4×, …
   DREAMCARD_VISION_THROTTLE_SEC (optional, default 1.25) — pause before each tile after the first (spaces API calls)
@@ -27,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from typing import Any
 
@@ -35,6 +40,8 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
 from playwright.sync_api import sync_playwright
+
+from vision_backend import VisionError, canonical_provider, extract_banner
 
 _REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 _OUTPUT_PATH = os.path.join(_REPO_ROOT, "cardsdeven", "public", "dreamcard_deals.json")
@@ -49,7 +56,9 @@ def _log(msg: str) -> None:
     """Line-buffered log for CMD / CI (flush so progress is visible during long API calls)."""
     ts = time.strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
-    print(line, flush=True)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    safe = line.encode(encoding, errors="backslashreplace").decode(encoding, errors="backslashreplace")
+    print(safe, flush=True)
 
 
 def _preview(text: str, max_len: int = 140) -> str:
@@ -84,7 +93,7 @@ def _merchant_from_clean_alt(clean_alt: str) -> str:
     return m
 
 
-def _wait_for_deal_banner(page, img_locator, *, timeout_ms: int = 10000) -> None:
+def _wait_for_deal_banner(page, img_locator, *, timeout_ms: int = 10000, require_pixels: bool = False) -> None:
     """Lazy-loaded .deal-img: wait for real dimensions or meaningful alt (logs showed empty alt if we read too early)."""
     deadline = time.perf_counter() + timeout_ms / 1000.0
     while time.perf_counter() < deadline:
@@ -92,7 +101,7 @@ def _wait_for_deal_banner(page, img_locator, *, timeout_ms: int = 10000) -> None
             page.wait_for_timeout(200)
             continue
         alt = (img_locator.get_attribute("alt") or "").strip()
-        if len(alt) >= 8:
+        if len(alt) >= 8 and not require_pixels:
             return
         try:
             img_locator.evaluate(
@@ -167,13 +176,13 @@ class VisionRunFlags:
         self.skip_vision = skip_vision
 
 
-_VISION_PROMPT = """You are reading a promotional banner from the Israeli DreamCard member deals site.
-The image may contain Hebrew, English, or both. Extract the store/brand name and every distinct line of offer text visible on the banner (headlines, percentages, conditions).
+_VISION_PROMPT = """Read this Israeli shopping banner. It contains a brand name and offer text in Hebrew, English, or both.
 
-Return ONLY valid JSON with this exact shape (no markdown fences):
-{"merchant":"brand or store name as shown","lines":["line1","line2"]}
+Reply with one JSON object and nothing else.
+The merchant value must be the brand printed on the banner.
+The lines value must be a JSON array of the offer sentences printed on the banner, including prices and percentages.
 
-If text is unreadable, do your best. Use empty strings only if there is no text at all."""
+Use only words you can see. Do not describe the photo."""
 
 
 def _strip_code_fence(text: str) -> str:
@@ -356,6 +365,51 @@ def _img_asset_key(src: str | None) -> str:
     return s.split("/")[-1].split("?", 1)[0] if s else ""
 
 
+def _vision_provider_name() -> str:
+    raw = (os.environ.get("VISION_PROVIDER") or "deepseek-flash").strip().lower() or "deepseek-flash"
+    if raw == "gemini":
+        return "gemini"
+    return canonical_provider(raw)
+
+
+def _read_tile(page, deal, *, idx: int, n: int, phase: str, screenshot: bool) -> dict[str, Any]:
+    """Scroll one deal tile into view and read alt / url. Screenshot when requested."""
+    _log(f"{phase} — tile {idx}/{n}: scrolling into view…")
+    deal.scroll_into_view_if_needed()
+    page.wait_for_timeout(450)
+    img_el = deal.locator("img.deal-img").first
+    _log(f"{phase} — tile {idx}/{n}: waiting for lazy banner image / alt…")
+    _wait_for_deal_banner(page, img_el, require_pixels=screenshot)
+    href = _deal_promo_url(deal)
+    src = img_el.get_attribute("src") if img_el.count() else ""
+    img_key = _img_asset_key(src)
+    raw_alt = (img_el.get_attribute("alt") or "").strip() if img_el.count() else ""
+    alt = _clean_banner_alt(raw_alt)
+    png = b""
+    if screenshot:
+        _log(f"{phase} — tile {idx}/{n}: taking screenshot ({img_key or 'no asset key'})…")
+        png = deal.screenshot(type="png")
+    return {
+        "phase": phase,
+        "idx": idx,
+        "n": n,
+        "png": png,
+        "alt": alt,
+        "href": href,
+        "img_key": img_key,
+    }
+
+
+def _open_deals(page, toggle_label: str, phase: str):
+    _log(f"{phase} — clicking filter tab «{toggle_label}»…")
+    _click_toggle_exact(page, toggle_label)
+    page.wait_for_timeout(800)
+    deals = page.locator(".deals-container dc-deal")
+    n = deals.count()
+    _log(f"{phase} — found {n} deal tile(s) in .deals-container")
+    return deals, n
+
+
 def _dedup_key(m: str, d: str, img_key: str, url: str) -> str:
     blob = re.sub(r"\s+", " ", f"{m}||{d}").strip().lower()
     if img_key:
@@ -365,41 +419,46 @@ def _dedup_key(m: str, d: str, img_key: str, url: str) -> str:
     return f"t:{_stable_blob_hash(blob)}"
 
 
+def _dispatch_vision(client: genai.Client | None, model: str, png: bytes) -> dict[str, Any]:
+    provider = _vision_provider_name()
+    if provider == "gemini":
+        if client is None:
+            raise VisionError("Gemini client is missing.", fatal=True)
+        return _vision_extract(client, model, png)
+    return extract_banner(png, _VISION_PROMPT, provider=provider)
+
+
 def _scrape_toggle_view(
     page,
-    client: genai.Client,
+    client: genai.Client | None,
     model: str,
     toggle_label: str,
     *,
     phase: str,
     vision_flags: VisionRunFlags,
 ) -> list[dict[str, Any]]:
-    _log(f"{phase} — clicking filter tab «{toggle_label}»…")
-    _click_toggle_exact(page, toggle_label)
-    page.wait_for_timeout(800)
-    deals = page.locator(".deals-container dc-deal")
-    n = deals.count()
-    _log(f"{phase} — found {n} deal tile(s) in .deals-container")
+    provider = _vision_provider_name()
+    deals, n = _open_deals(page, toggle_label, phase)
     out: list[dict[str, Any]] = []
     for i in range(n):
         idx = i + 1
         if i > 0 and not vision_flags.skip_vision:
             th = _vision_throttle_sec()
             if th > 0:
-                _log(f"{phase} — inter-tile throttle {th:.2f}s before tile {idx}/{n} (reduces Gemini 429 bursts)…")
+                _log(
+                    f"{phase} — inter-tile throttle {th:.2f}s before tile {idx}/{n} "
+                    f"(spaces {provider} calls)…"
+                )
                 time.sleep(th)
         deal = deals.nth(i)
-        _log(f"{phase} — tile {idx}/{n}: scrolling into view…")
-        deal.scroll_into_view_if_needed()
-        page.wait_for_timeout(450)
-        img_el = deal.locator("img.deal-img").first
-        _log(f"{phase} — tile {idx}/{n}: waiting for lazy banner image / alt…")
-        _wait_for_deal_banner(page, img_el)
-        href = _deal_promo_url(deal)
-        src = img_el.get_attribute("src") if img_el.count() else ""
-        img_key = _img_asset_key(src)
-        raw_alt = (img_el.get_attribute("alt") or "").strip() if img_el.count() else ""
-        alt = _clean_banner_alt(raw_alt)
+        if not vision_flags.skip_vision:
+            tile = _read_tile(page, deal, idx=idx, n=n, phase=phase, screenshot=True)
+        else:
+            tile = _read_tile(page, deal, idx=idx, n=n, phase=phase, screenshot=False)
+        alt = tile["alt"]
+        href = tile["href"]
+        img_key = tile["img_key"]
+        png = tile["png"]
         if not alt and vision_flags.skip_vision:
             _log(
                 f"{phase} — tile {idx}/{n}: banner alt still empty after wait — "
@@ -410,20 +469,16 @@ def _scrape_toggle_view(
             _log(
                 f"{phase} — tile {idx}/{n}: vision disabled — using img alt only (no API call)…"
             )
-            png = b""
             parsed: dict[str, Any] = {"merchant": "", "lines": []}
             t0 = time.perf_counter()
             dt = time.perf_counter() - t0
         else:
-            _log(f"{phase} — tile {idx}/{n}: taking screenshot ({img_key or 'no asset key'})…")
-            png = deal.screenshot(type="png")
             _log(
-                f"{phase} — tile {idx}/{n}: calling Gemini vision ({len(png)} bytes; "
-                f"429/5xx use exponential backoff, not stuck)…"
+                f"{phase} — tile {idx}/{n}: calling {provider} vision ({len(png)} bytes)…"
             )
             t0 = time.perf_counter()
             try:
-                parsed = _vision_extract(client, model, png)
+                parsed = _dispatch_vision(client, model, png)
             except APIError as e:
                 if e.code == 404:
                     _log(
@@ -439,6 +494,16 @@ def _scrape_toggle_view(
                     _log(
                         f"{phase} — tile {idx}/{n}: vision API failed ({type(e).__name__} HTTP {e.code}) — "
                         f"this tile: fallback to img alt; next tiles still use vision unless quota/404."
+                    )
+                parsed = {"merchant": "", "lines": []}
+            except VisionError as e:
+                if e.fatal:
+                    _log(f"{phase} — tile {idx}/{n}: {e} Disabling vision for remaining tiles.")
+                    vision_flags.skip_vision = True
+                else:
+                    _log(
+                        f"{phase} — tile {idx}/{n}: {provider} failed ({e}) — "
+                        f"this tile: fallback to img alt; next tiles still use vision."
                     )
                 parsed = {"merchant": "", "lines": []}
             dt = time.perf_counter() - t0
@@ -475,30 +540,34 @@ def _scrape_toggle_view(
 
 
 def main() -> None:
+    provider = _vision_provider_name()
     api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
-    if not api_key:
-        raise SystemExit("GEMINI_API_KEY is not set (add to .env or cardsdeven/.env).")
+    client: genai.Client | None = None
+    if provider == "gemini":
+        if not api_key:
+            raise SystemExit("GEMINI_API_KEY is not set (add to .env or cardsdeven/.env).")
+        client = genai.Client(api_key=api_key)
 
     url = (os.environ.get("DREAMCARD_DEALS_URL") or _DEFAULT_URL).strip()
     model = (os.environ.get("DREAMCARD_VISION_MODEL") or _DEFAULT_VISION_MODEL).strip()
+    output_path = (os.environ.get("DREAMCARD_OUTPUT_PATH") or _OUTPUT_PATH).strip()
 
     headless = _playwright_headless()
     slow_mo = _playwright_slow_mo_ms()
     _log("========== DreamCard scrape starting ==========")
     _log(f"URL: {url}")
-    _log(f"Vision model: {model}")
+    _log(f"Vision provider: {provider}" + (f" model={model}" if provider == "gemini" else ""))
     _log(f"Playwright headless={headless} slow_mo_ms={slow_mo}")
     _log(
         f"Vision retries: max_attempts={_vision_max_attempts()} 429_base_sec={_vision_429_base_sec():.1f} "
         f"inter_tile_throttle_sec={_vision_throttle_sec():.2f}"
     )
-    _log(f"Output: {_OUTPUT_PATH}")
+    _log(f"Output: {output_path}")
 
     vision_flags = VisionRunFlags(skip_vision=_env_truthy("DREAMCARD_SKIP_VISION"))
     if vision_flags.skip_vision:
-        _log("DREAMCARD_SKIP_VISION is set — Gemini will not be called; using image alt / DOM text only.")
+        _log("DREAMCARD_SKIP_VISION is set — vision will not be called; using image alt / DOM text only.")
 
-    client = genai.Client(api_key=api_key)
     merged: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -578,11 +647,11 @@ def main() -> None:
         "source_url": url,
         "deals": merged,
     }
-    os.makedirs(os.path.dirname(_OUTPUT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     _log(f"Writing JSON ({len(merged)} deals)…")
-    with open(_OUTPUT_PATH, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    _log(f"Done — wrote {len(merged)} deals to {_OUTPUT_PATH}")
+    _log(f"Done — wrote {len(merged)} deals to {output_path}")
     _log("========== DreamCard scrape finished ==========")
 
 

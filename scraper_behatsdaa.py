@@ -8,9 +8,9 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 import firebase_admin
 from firebase_admin import credentials, db
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
+
+from gemini_embed import embed_documents, require_gemini_keys
 
 
 # ==========================================
@@ -62,10 +62,7 @@ if not BEHATSDAA_ID:
         'or export it in the shell (GitHub Actions: repository secret BEHATSDAA_ID).'
     )
 
-api_key = os.environ.get("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError("GEMINI_API_KEY not found! Set it in .env or cardsdeven/.env.")
-client = genai.Client(api_key=api_key)
+require_gemini_keys()
 
 _init_firebase_admin()
 _otp_path = os.environ.get('FIREBASE_OTP_REF', 'secret_otp_drop_zone_xyz123').strip() or 'secret_otp_drop_zone_xyz123'
@@ -303,24 +300,7 @@ def _load_behatsdaa_embedding_cache(json_path):
 
 
 def _embed_batch_with_retry_behatsdaa(texts):
-    delays = [2, 5, 10, 20, 35, 55, 90, 120]
-    last_err = None
-    for attempt, wait in enumerate(delays):
-        try:
-            return client.models.embed_content(
-                model="gemini-embedding-001",
-                contents=texts,
-                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
-            )
-        except Exception as e:
-            last_err = e
-            msg = str(e).lower()
-            if "429" in msg or "resource_exhausted" in msg or "quota" in msg:
-                print(f"  Rate limited (attempt {attempt + 1}/{len(delays)}); sleeping {wait}s …")
-                time.sleep(wait)
-                continue
-            raise
-    raise last_err or RuntimeError("Embedding failed after retries")
+    return embed_documents(texts)
 
 
 def generate_embeddings(nested_data):
@@ -566,7 +546,7 @@ def scrape_page_data(page, url, master_data):
 # 5. MAIN EXECUTOR
 # ==========================================
 
-def run_scraper(headless_mode=True):
+def run_scraper(headless_mode=False):
     start_time = int(time.time())
     print(f"Starting Scraper in {'HEADLESS' if headless_mode else 'VISIBLE'} mode...")
 

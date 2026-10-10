@@ -7,7 +7,7 @@ Discovers .swiper.mySwiper1, .mySwiper2, ... collects category links from slides
 
 Output: cardsdeven/public/pais_plus_data.json
   - deals: [{ "m", "c": "PAIS_PLUS", "d", ... }] compatible with App.jsx DISCOUNTS_DATA
-  - vectors: Gemini embeddings (same shape as scraper.py), unless --no-embed
+  - vectors: Gemini embeddings (same shape as scraper_behatsdaa.py), unless --no-embed
 
 Embeddings are incremental: vectors are reused from the previous pais_plus_data.json when
 deal content is unchanged (product_id or text signature), so routine scrapes only call the
@@ -17,8 +17,9 @@ Optional env:
   PAIS_EMBED_BATCH_SIZE=100   (max 100 — Gemini API hard limit per embed_content call)
   PAIS_EMBED_SLEEP_SEC=2      (pause between batches; default 2)
 
-By default: embeds with Gemini (needs GEMINI_API_KEY) and runs git add/commit/push for
-pais_plus_data.json (same idea as scraper.py → data.json).
+By default: embeds with Gemini (GEMINI_API_KEY, then GEMINI_API_KEY_2, then
+GEMINI_API_KEY_3, switching only after a quota 429) and runs git add/commit/push for
+pais_plus_data.json (same idea as scraper_behatsdaa.py → data.json).
 
 Manual run:
   python scraper_pais_plus.py
@@ -314,39 +315,19 @@ def load_embedding_cache(json_path: str) -> dict[str, dict]:
     return cache
 
 
-def _embed_batch_with_retry(client, types_mod, texts: list[str]) -> list:
-    """Call embed_content with backoff on 429 / RESOURCE_EXHAUSTED."""
-    delays = [2, 5, 10, 20, 35, 55, 90, 120]
-    last_err: Exception | None = None
-    for attempt, wait in enumerate(delays):
-        try:
-            return client.models.embed_content(
-                model="gemini-embedding-001",
-                contents=texts,
-                config=types_mod.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
-            )
-        except Exception as e:
-            last_err = e
-            msg = str(e).lower()
-            if "429" in msg or "resource_exhausted" in msg or "quota" in msg:
-                print(f"  Rate limited (attempt {attempt + 1}/{len(delays)}); sleeping {wait}s …")
-                time.sleep(wait)
-                continue
-            raise
-    raise last_err or RuntimeError("Embedding failed after retries")
+def _embed_batch_with_retry(texts: list[str]):
+    """Embed with the shared key pool. Quota 429 moves to the next key."""
+    from gemini_embed import embed_documents
+
+    return embed_documents(texts)
 
 
 def run_embed_deals_incremental(all_deals: list[dict]) -> list[dict]:
     """Embed only new/changed deals; reuse vectors from existing OUTPUT_PATH."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not set; cannot embed.")
+    from gemini_embed import require_gemini_keys
 
-    from google import genai
-    from google.genai import types
-
+    require_gemini_keys()
     cache = load_embedding_cache(OUTPUT_PATH)
-    client = genai.Client(api_key=api_key)
 
     n = len(all_deals)
     filled: list[dict | None] = [None] * n
@@ -379,7 +360,7 @@ def run_embed_deals_incremental(all_deals: list[dict]) -> list[dict]:
         batch_deals = [all_deals[i] for i in batch_idx]
         texts = [embed_text(d) for d in batch_deals]
         print(f"  API batch: {len(batch_deals)} texts (indices {b_start}–{b_start + len(batch_idx)} of pending) …")
-        response = _embed_batch_with_retry(client, types, texts)
+        response = _embed_batch_with_retry(texts)
         for j, embedding in enumerate(response.embeddings):
             gi = batch_idx[j]
             deal = all_deals[gi]

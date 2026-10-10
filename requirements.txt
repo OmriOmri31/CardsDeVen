@@ -5,3 +5,4 @@ playwright-stealth==2.0.3
 firebase-admin==7.7.0
 python-dotenv==1.2.4
 google-genai==2.28.0
+openai==3.28.0
