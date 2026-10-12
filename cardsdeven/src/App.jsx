@@ -1324,6 +1324,45 @@ function normalizeCardLink(raw) {
   }
 }
 
+const MAX_DETAIL_LINKS = 6;
+
+function cleanDetailLinkLabel(raw) {
+  return String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+}
+
+/** Named links typed in the card form. Blank rows are skipped. A filled row with a bad address is an error. */
+function detailLinksFromForm(rows) {
+  const drafts = Array.isArray(rows) ? rows : [];
+  const links = [];
+  for (const row of drafts) {
+    const label = cleanDetailLinkLabel(row?.label);
+    const rawUrl = String(row?.url || '').trim();
+    if (!label && !rawUrl) continue;
+    const url = normalizeCardLink(rawUrl);
+    if (!url) {
+      return { links: [], error: label ? `"${label}" needs a full https link.` : 'Enter a full https link.' };
+    }
+    links.push({ label, url });
+  }
+  if (links.length > MAX_DETAIL_LINKS) {
+    return { links: [], error: `A card can have up to ${MAX_DETAIL_LINKS} links.` };
+  }
+  return { links, error: '' };
+}
+
+/** Saved links that are safe to open. An empty name shows as "Link". */
+function cardDetailLinks(raw) {
+  if (!Array.isArray(raw)) return [];
+  const links = [];
+  for (const row of raw) {
+    const url = normalizeCardLink(row?.url);
+    if (!url) continue;
+    links.push({ label: cleanDetailLinkLabel(row?.label) || 'Link', url });
+    if (links.length >= MAX_DETAIL_LINKS) break;
+  }
+  return links;
+}
+
 function WalletCreditPlastic({ balanceRemaining, balanceLimit, limitCaption = 'Loaded', programName, chromeGradient, ruleType, expiryDate, isExpiringSoon, valueKind = 'money', unitLabel = '' }) {
   const units = valueKind === 'units';
   const showExpiry = ruleType === 'expires' && expiryDate;
@@ -1461,6 +1500,19 @@ function OpenWalletCard({ card, detailRef, onEdit, onDelete, onSpend, onSetBalan
                 Store list
               </a>
             ) : null}
+            {cardDetailLinks(card.detailLinks).map((link) => (
+              <a
+                key={`${link.label}\0${link.url}`}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cdv-btn cdv-btn--outline max-w-[16rem]"
+                title={link.url}
+              >
+                <ExternalLink size={15} className="shrink-0" aria-hidden />
+                <span className="truncate" dir="auto">{link.label}</span>
+              </a>
+            ))}
           </div>
           {progData.note ? <p className="text-xs leading-relaxed text-[var(--cdv-mute)]">{progData.note}</p> : null}
         </div>
@@ -1626,6 +1678,7 @@ const EMPTY_CARD_FORM = {
   plasticAccentHex: '',
   cardLink: '',
   storeListLink: '',
+  detailLinks: [],
 };
 
 const EMPTY_EXPENSE_FORM = {
@@ -1702,6 +1755,9 @@ function appendStoreListLink(card, line) {
   if (balance) next += ` [BALANCE CHECK page: ${balance}]`;
   const storeList = normalizeCardLink(card.storeListLink);
   if (storeList) next += ` [STORE LIST of places this card can pay: ${storeList}]`;
+  for (const link of cardDetailLinks(card.detailLinks)) {
+    next += ` [LINK ${link.label}: ${link.url}]`;
+  }
   return next;
 }
 
@@ -2644,6 +2700,13 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       }
     }
     applyChrome(cardData);
+    const parsedLinks = detailLinksFromForm(newCard.detailLinks);
+    if (parsedLinks.error) {
+      showToastMsg(parsedLinks.error, 'error');
+      return;
+    }
+    if (parsedLinks.links.length) cardData.detailLinks = parsedLinks.links;
+    else if (editingCardId) cardData.detailLinks = deleteField();
     if (!isUnits && Array.isArray(cardData.acceptedStores)) {
       for (const name of cardData.acceptedStores) {
         if (KNOWN_MERCHANTS[name]) continue;
@@ -2831,6 +2894,10 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
       plasticAccentHex: card.plasticAccentHex || '',
       cardLink: card.cardLink || '',
       storeListLink: card.storeListLink || '',
+      detailLinks: (Array.isArray(card.detailLinks) ? card.detailLinks : [])
+        .map((row) => ({ label: cleanDetailLinkLabel(row?.label), url: String(row?.url || '') }))
+        .filter((row) => row.label || row.url)
+        .slice(0, MAX_DETAIL_LINKS),
     });
     setEditingCardId(card.id);
     setShowCardForm(true);
@@ -4260,6 +4327,78 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                 <p className="mt-2 text-xs text-[var(--cdv-mute)]">Optional. Shows a Store list button — the page of places this card can pay.</p>
               </div>
             </div>
+
+            <fieldset className="space-y-3">
+              <legend className="cdv-label">Links</legend>
+              <p className="text-xs leading-relaxed text-[var(--cdv-mute)]">Optional. Each one is a button on the card details. Name it however you want: website, terms, the app.</p>
+              {(newCard.detailLinks || []).map((row, index) => (
+                <div key={index} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="sm:w-36 sm:shrink-0">
+                    <label htmlFor={`cdv-detail-link-label-${index}`} className="sr-only">Link name</label>
+                    <input
+                      id={`cdv-detail-link-label-${index}`}
+                      type="text"
+                      value={row.label}
+                      maxLength={40}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setNewCard((prev) => {
+                          const detailLinks = [...(prev.detailLinks || [])];
+                          detailLinks[index] = { ...detailLinks[index], label: value };
+                          return { ...prev, detailLinks };
+                        });
+                      }}
+                      className="cdv-input"
+                      placeholder="Website"
+                      dir="auto"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor={`cdv-detail-link-url-${index}`} className="sr-only">Link address</label>
+                    <input
+                      id={`cdv-detail-link-url-${index}`}
+                      type="url"
+                      inputMode="url"
+                      value={row.url}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setNewCard((prev) => {
+                          const detailLinks = [...(prev.detailLinks || [])];
+                          detailLinks[index] = { ...detailLinks[index], url: value };
+                          return { ...prev, detailLinks };
+                        });
+                      }}
+                      className="cdv-input"
+                      placeholder="https://…"
+                      dir="ltr"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNewCard((prev) => ({
+                      ...prev,
+                      detailLinks: (prev.detailLinks || []).filter((_, i) => i !== index),
+                    }))}
+                    className="cdv-icon-btn shrink-0 self-end sm:self-auto"
+                    aria-label={`Remove link ${index + 1}`}
+                  >
+                    <Trash2 size={16} aria-hidden />
+                  </button>
+                </div>
+              ))}
+              {(newCard.detailLinks || []).length < MAX_DETAIL_LINKS && (
+                <button
+                  type="button"
+                  onClick={() => setNewCard((prev) => ({
+                    ...prev,
+                    detailLinks: [...(prev.detailLinks || []), { label: '', url: '' }],
+                  }))}
+                  className="cdv-btn cdv-btn--outline"
+                >
+                  <Plus size={16} aria-hidden /> Add link
+                </button>
+              )}
+            </fieldset>
 
             <div className="space-y-3 rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline)] bg-[var(--cdv-surface-sunken)] p-4">
               <div className="flex flex-wrap items-center gap-3">
