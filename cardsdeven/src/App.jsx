@@ -5,7 +5,7 @@ import {
   signOut, onAuthStateChanged, signInAnonymously,
   sendPasswordResetEmail, verifyPasswordResetCode, confirmPasswordReset,
 } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, deleteField } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, deleteField, writeBatch } from 'firebase/firestore';
 import {
   clubSearchTermsIncludeStandupTopic,
   dealBlobMentionsStandupComedian,
@@ -30,7 +30,7 @@ import {
   CreditCard, LayoutDashboard, Receipt, Plus, Trash2, AlertCircle,
   CalendarDays, RefreshCw, Infinity as InfinityIcon, CheckCircle2,
   Edit2, Moon, Sun, PieChart, LogOut, Lock, Mail,
-  Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info, ExternalLink, ChevronDown
+  Loader2, X, Search, ShieldAlert, Zap, Clock, CheckSquare, Square, Gift, Bot, Send, Info, ExternalLink, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 /** Default web app config (Firebase console → Project settings). Override with VITE_FIREBASE_* in .env for other envs. */
@@ -1694,6 +1694,56 @@ const EMPTY_EXPENSE_FORM = {
   scheduledFor: '',
 };
 
+const EMPTY_PRODUCT_FORM = {
+  name: '',
+  priceMode: 'fixed',
+  amount: '',
+  priceMin: '',
+  priceMax: '',
+  url: '',
+  cardIds: [],
+};
+
+function roundShekels(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function shekelCents(value) {
+  const rounded = roundShekels(value);
+  if (rounded == null) return 0;
+  return Math.round(rounded * 100);
+}
+
+/** Last card absorbs the leftover agora so the shares add up to the total. */
+function equalSplitShekels(total, cardIds) {
+  const ids = (cardIds || []).filter(Boolean);
+  const cents = shekelCents(total);
+  if (!ids.length || cents <= 0) return {};
+  const base = Math.floor(cents / ids.length);
+  let leftover = cents - base * ids.length;
+  const allocations = {};
+  ids.forEach((id) => {
+    const share = base + (leftover > 0 ? 1 : 0);
+    if (leftover > 0) leftover -= 1;
+    allocations[id] = (share / 100).toFixed(2);
+  });
+  return allocations;
+}
+
+function allocationCents(allocations) {
+  return Object.values(allocations || {}).reduce((sum, value) => sum + shekelCents(value), 0);
+}
+
+function moneyCardIdsOnProduct(product, cardList) {
+  const ids = Array.isArray(product?.cardIds) ? product.cardIds : [];
+  return ids.filter((id) => {
+    const card = cardList.find((entry) => entry.id === id);
+    return card && !isUnitCard(card);
+  });
+}
+
 function planDateFromInput(scheduledFor) {
   return scheduledFor ? asOfDate(scheduledFor) : new Date();
 }
@@ -1987,10 +2037,11 @@ export default function App() {
   const [resendCooldownSec, setResendCooldownSec] = useState(0);
   const [firebaseReady, setFirebaseReady] = useState(false);
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('wallets');
   const [cards, setCards] = useState([]);
   const [openWalletCardId, setOpenWalletCardId] = useState(null);
   const [expenses, setExpenses] = useState([]);
+  const [products, setProducts] = useState([]);
   const [userClubs, setUserClubs] = useState([]);
   const [customStores, setCustomStores] = useState([]);
   const [aiMessages, setAiMessages] = useState(() => loadAiChatFromStorage() ?? [{ role: 'model', text: DEFAULT_AI_WELCOME_TEXT }]);
@@ -2009,6 +2060,7 @@ export default function App() {
   const aiRequestInFlightRef = useRef(false);
   const quickSpendAnchorCardIdRef = useRef(null);
   const walletDetailRef = useRef(null);
+  const purchaseLockRef = useRef(false);
   const customStoresRef = useRef([]);
   const pendingStoresRef = useRef([]);
   const storeWriteRef = useRef(Promise.resolve());
@@ -2019,6 +2071,12 @@ export default function App() {
   const [editingCardId, setEditingCardId] = useState(null);
   const [newCard, setNewCard] = useState(EMPTY_CARD_FORM);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT_FORM);
+  const [ledgerExpanded, setLedgerExpanded] = useState(true);
+  const [purchaseFlow, setPurchaseFlow] = useState(null);
+  const [purchasingProductId, setPurchasingProductId] = useState(null);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [expenseValueKind, setExpenseValueKind] = useState('money');
   const [newExpense, setNewExpense] = useState(EMPTY_EXPENSE_FORM);
@@ -2190,6 +2248,8 @@ export default function App() {
     if (!user) {
       setCards([]);
       setExpenses([]);
+      setProducts([]);
+      setPurchaseFlow(null);
       setUserClubs([]);
       setCustomStores([]);
       customStoresRef.current = [];
@@ -2198,6 +2258,7 @@ export default function App() {
     }
     let unsubCards = () => {};
     let unsubExpenses = () => {};
+    let unsubProducts = () => {};
     let unsubClubs = () => {};
     let unsubStores = () => {};
     pendingStoresRef.current = [];
@@ -2205,6 +2266,7 @@ export default function App() {
       const db = getFirestore();
       unsubCards = onSnapshot(collection(db, getCollectionPath(user.uid, 'cards')), (snapshot) => setCards(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
       unsubExpenses = onSnapshot(collection(db, getCollectionPath(user.uid, 'expenses')), (snapshot) => setExpenses(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
+      unsubProducts = onSnapshot(collection(db, getCollectionPath(user.uid, 'products')), (snapshot) => setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))));
       unsubClubs = onSnapshot(doc(db, getCollectionPath(user.uid, 'settings'), 'clubsProfile'), (docSnap) => { if (docSnap.exists()) setUserClubs(docSnap.data().activeClubs || []); });
       unsubStores = onSnapshot(doc(db, getCollectionPath(user.uid, 'settings'), 'storeCatalog'), (docSnap) => {
         const clean = cleanStoreCatalog(docSnap.exists() ? docSnap.data().entries : []);
@@ -2217,7 +2279,7 @@ export default function App() {
     } catch (e) {
       console.error('Firestore', e);
     }
-    return () => { unsubCards(); unsubExpenses(); unsubClubs(); unsubStores(); };
+    return () => { unsubCards(); unsubExpenses(); unsubProducts(); unsubClubs(); unsubStores(); };
   }, [user]);
 
   const rememberStore = (name, cat) => {
@@ -2437,6 +2499,7 @@ export default function App() {
   const totalPlannedExpenses = useMemo(() => {
     const unitIds = new Set(cards.filter((c) => isUnitCard(c)).map((c) => c.id));
     return expenses.reduce((sum, e) => {
+      if (e.applyToBalance === false) return sum;
       if (unitIds.has(e.cardId) || (e.units != null && e.units !== '')) return sum;
       return sum + parseFloat(e.amount || 0);
     }, 0);
@@ -2465,6 +2528,24 @@ export default function App() {
   }, [moneyCardBalances]);
 
   const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)), [expenses]);
+  const openProducts = useMemo(
+    () => products
+      .filter((product) => !product.purchased)
+      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)),
+    [products],
+  );
+  const ledgerLogSummary = useMemo(() => {
+    const unitIds = new Set(cards.filter((card) => isUnitCard(card)).map((card) => card.id));
+    let money = 0;
+    let moneyCount = 0;
+    expenses.forEach((expense) => {
+      const useRow = unitIds.has(expense.cardId) || (expense.units != null && expense.units !== '');
+      if (useRow) return;
+      moneyCount += 1;
+      money += parseFloat(expense.amount) || 0;
+    });
+    return { money, moneyCount };
+  }, [expenses, cards]);
 
   useEffect(() => {
     if (activeTab === 'ai') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2869,6 +2950,251 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
     if (target) await deleteCard(target.id);
   };
   const deleteExpense = async (id) => { if (user) { await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'expenses'), id)); showToastMsg('Expense removed'); } };
+
+  const resetProductForm = () => {
+    setNewProduct(EMPTY_PRODUCT_FORM);
+    setEditingProductId(null);
+    setShowProductForm(false);
+  };
+
+  const startEditProduct = (product) => {
+    setNewProduct({
+      name: product.name || '',
+      priceMode: product.priceMode === 'range' ? 'range' : 'fixed',
+      amount: product.amount != null ? String(product.amount) : '',
+      priceMin: product.priceMin != null ? String(product.priceMin) : '',
+      priceMax: product.priceMax != null ? String(product.priceMax) : '',
+      url: product.url || '',
+      cardIds: Array.isArray(product.cardIds) ? [...product.cardIds] : [],
+    });
+    setEditingProductId(product.id);
+    setShowProductForm(true);
+  };
+
+  const toggleProductCard = (cardId) => {
+    setNewProduct((prev) => {
+      const has = prev.cardIds.includes(cardId);
+      return {
+        ...prev,
+        cardIds: has ? prev.cardIds.filter((id) => id !== cardId) : [...prev.cardIds, cardId],
+      };
+    });
+  };
+
+  const handleSaveProduct = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    const name = String(newProduct.name || '').trim();
+    if (!name) {
+      showToastMsg('Enter a product name.', 'error');
+      return;
+    }
+    const urlRaw = String(newProduct.url || '').trim();
+    const url = urlRaw ? normalizeCardLink(urlRaw) : '';
+    if (urlRaw && !url) {
+      showToastMsg('Enter a full https link, or leave the link blank.', 'error');
+      return;
+    }
+    const cardIds = (newProduct.cardIds || []).filter((id) => moneyCardBalances.some((card) => card.id === id));
+    const data = {
+      name,
+      cardIds,
+      purchased: false,
+      updatedAt: new Date().toISOString(),
+    };
+    if (newProduct.priceMode === 'range') {
+      const priceMin = roundShekels(newProduct.priceMin);
+      const priceMax = roundShekels(newProduct.priceMax);
+      if (priceMin == null || priceMin <= 0 || priceMax == null || priceMax <= 0) {
+        showToastMsg('Enter a minimum and a maximum price.', 'error');
+        return;
+      }
+      if (priceMax < priceMin) {
+        showToastMsg('The maximum has to be at least the minimum.', 'error');
+        return;
+      }
+      data.priceMode = 'range';
+      data.priceMin = priceMin;
+      data.priceMax = priceMax;
+      if (editingProductId) data.amount = deleteField();
+    } else {
+      const amount = roundShekels(newProduct.amount);
+      if (amount == null || amount <= 0) {
+        showToastMsg('Enter a price.', 'error');
+        return;
+      }
+      data.priceMode = 'fixed';
+      data.amount = amount;
+      if (editingProductId) {
+        data.priceMin = deleteField();
+        data.priceMax = deleteField();
+      }
+    }
+    if (url) data.url = url;
+    else if (editingProductId) data.url = deleteField();
+    const productsPath = getCollectionPath(user.uid, 'products');
+    try {
+      if (editingProductId) {
+        await updateDoc(doc(getFirestore(), productsPath, editingProductId), data);
+        showToastMsg('Product updated');
+      } else {
+        await addDoc(collection(getFirestore(), productsPath), data);
+        showToastMsg('Product added');
+      }
+      resetProductForm();
+    } catch (err) {
+      console.error(err);
+      showToastMsg('Could not save that product. Try again.', 'error');
+    }
+  };
+
+  const deleteProduct = async (id) => {
+    if (!user) return;
+    await deleteDoc(doc(getFirestore(), getCollectionPath(user.uid, 'products'), id));
+    showToastMsg('Product removed');
+  };
+
+  const commitPurchase = async (product, amount, updateCards, allocations) => {
+    if (!user || !product?.id || purchaseLockRef.current) return;
+    const paid = roundShekels(amount);
+    if (paid == null || paid <= 0) {
+      showToastMsg('Enter the amount you paid.', 'error');
+      return;
+    }
+    if (expenses.some((expense) => expense.productId === product.id)) {
+      await updateDoc(doc(getFirestore(), getCollectionPath(user.uid, 'products'), product.id), {
+        purchased: true,
+        purchasedAmount: paid,
+        purchasedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      setPurchaseFlow(null);
+      showToastMsg('That purchase is already in the ledger');
+      return;
+    }
+    purchaseLockRef.current = true;
+    setPurchasingProductId(product.id);
+    const now = new Date().toISOString();
+    const db = getFirestore();
+    const expensesPath = getCollectionPath(user.uid, 'expenses');
+    try {
+      const base = {
+        category: '',
+        merchantName: '',
+        expenseCategories: [],
+        expenseMerchants: [],
+        isCompleted: true,
+        scheduledFor: null,
+        updatedAt: now,
+        productId: product.id,
+        source: 'product',
+      };
+      const productUrl = normalizeCardLink(product.url);
+      if (productUrl) base.productUrl = productUrl;
+      const batch = writeBatch(db);
+
+      if (!updateCards) {
+        const fundingCardIds = moneyCardIdsOnProduct(product, cards);
+        batch.set(doc(collection(db, expensesPath)), {
+          ...base,
+          name: product.name,
+          amount: paid,
+          cardId: '',
+          applyToBalance: false,
+          ...(fundingCardIds.length ? { fundingCardIds } : {}),
+        });
+      } else {
+        const shares = Object.entries(allocations || {})
+          .map(([cardId, raw]) => ({ cardId, amount: roundShekels(raw) }))
+          .filter((share) => share.amount != null && share.amount > 0 && cards.some((card) => card.id === share.cardId && !isUnitCard(card)));
+        if (allocationCents(Object.fromEntries(shares.map((share) => [share.cardId, share.amount]))) !== shekelCents(paid)) {
+          showToastMsg(`Assigned amounts must add up to ${formatShekels(paid)}.`, 'error');
+          return;
+        }
+        shares.forEach((share) => {
+          const card = cards.find((entry) => entry.id === share.cardId);
+          batch.set(doc(collection(db, expensesPath)), {
+            ...base,
+            name: shares.length > 1 && card ? `${product.name} (${card.name})` : product.name,
+            amount: share.amount,
+            cardId: share.cardId,
+            applyToBalance: true,
+          });
+        });
+      }
+
+      batch.update(doc(db, getCollectionPath(user.uid, 'products'), product.id), {
+        purchased: true,
+        purchasedAmount: paid,
+        purchasedAt: now,
+        applyToBalance: !!updateCards,
+        updatedAt: now,
+      });
+      await batch.commit();
+      setPurchaseFlow(null);
+      showToastMsg(updateCards ? 'Purchase logged and cards updated' : 'Purchase logged. Card balances unchanged');
+    } catch (err) {
+      console.error(err);
+      showToastMsg('Could not save that purchase. Try again.', 'error');
+    } finally {
+      purchaseLockRef.current = false;
+      setPurchasingProductId(null);
+    }
+  };
+
+  const openCardUpdateStep = (product, amount) => {
+    const ids = moneyCardIdsOnProduct(product, cards);
+    if (ids.length === 0) {
+      commitPurchase(product, amount, false, {});
+      return;
+    }
+    setPurchaseFlow({
+      product,
+      step: 'cards',
+      actualAmount: amount.toFixed(2),
+      allocations: ids.length === 1 ? { [ids[0]]: amount.toFixed(2) } : {},
+    });
+  };
+
+  const beginPurchase = (product) => {
+    if (!user || purchasingProductId) return;
+    if (product.priceMode === 'range') {
+      setPurchaseFlow({ product, step: 'amount', actualAmount: '', allocations: {} });
+      return;
+    }
+    const amount = roundShekels(product.amount);
+    if (amount == null || amount <= 0) {
+      showToastMsg('Enter a price before marking this purchased.', 'error');
+      return;
+    }
+    openCardUpdateStep(product, amount);
+  };
+
+  const confirmPaidAmount = () => {
+    if (!purchaseFlow || purchaseFlow.step !== 'amount') return;
+    const amount = roundShekels(purchaseFlow.actualAmount);
+    if (amount == null || amount <= 0) {
+      showToastMsg('Enter the amount you paid.', 'error');
+      return;
+    }
+    openCardUpdateStep(purchaseFlow.product, amount);
+  };
+
+  const confirmCardUpdate = () => {
+    if (!purchaseFlow || purchaseFlow.step !== 'cards') return;
+    const amount = roundShekels(purchaseFlow.actualAmount);
+    const ids = moneyCardIdsOnProduct(purchaseFlow.product, cards);
+    if (amount == null || amount <= 0) return;
+    if (ids.length > 1 && allocationCents(purchaseFlow.allocations) !== shekelCents(amount)) {
+      showToastMsg(`Assigned amounts must add up to ${formatShekels(amount)}.`, 'error');
+      return;
+    }
+    const allocations = ids.length === 1
+      ? { [ids[0]]: amount.toFixed(2) }
+      : purchaseFlow.allocations;
+    commitPurchase(purchaseFlow.product, amount, true, allocations);
+  };
+
   const startEditCard = (card) => {
     const preset = recurringPresetId(card) || 'monthly';
     const units = isUnitCard(card);
@@ -3367,7 +3693,14 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               )}
 
               <section aria-label="Portfolio summary" className="cdv-band-inverse overflow-hidden">
-                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[var(--cdv-band-divider)]">
+                <div className="grid grid-cols-1 divide-y divide-[var(--cdv-band-divider)]">
+                  <div className="p-7 sm:p-9">
+                    <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Available to spend</p>
+                    <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-positive)]">{formatShekels(totalRemainingBalance)}</p>
+                    <p className="mt-2 text-sm text-[var(--cdv-on-band-mute)]">
+                      After <span className="cdv-amount">{formatShekels(totalPlannedExpenses)}</span> planned and spent
+                    </p>
+                  </div>
                   <div className="p-7 sm:p-9">
                     <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Total portfolio</p>
                     <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-on-band)]">{formatShekels(totalLoadedBalance)}</p>
@@ -3377,19 +3710,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                         : <>Loaded across {cards.length} {cards.length === 1 ? 'card' : 'cards'}</>}
                     </p>
                   </div>
-                  <div className="p-7 sm:p-9">
-                    <p className="cdv-eyebrow !text-[var(--cdv-on-band-mute)]">Still available</p>
-                    <p className="cdv-amount mt-3 text-4xl sm:text-5xl font-semibold text-[var(--cdv-positive)]">{formatShekels(totalRemainingBalance)}</p>
-                    <p className="mt-2 text-sm text-[var(--cdv-on-band-mute)]">
-                      After <span className="cdv-amount">{formatShekels(totalPlannedExpenses)}</span> planned and spent
-                    </p>
-                  </div>
                 </div>
               </section>
 
               <section aria-labelledby="cdv-budget-heading">
                 <div className="mb-5 flex items-baseline justify-between gap-4">
-                  <h2 id="cdv-budget-heading" className="cdv-display text-2xl">Budget by category</h2>
+                  <h2 id="cdv-budget-heading" className="cdv-display text-2xl">Estimated Budget by Category</h2>
                   {fundsByCategory.length > 0 && (
                     <p className="cdv-eyebrow shrink-0">{fundsByCategory.length} categories</p>
                   )}
@@ -3511,22 +3837,102 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
                 <div className="min-w-0">
                   <h2 className="cdv-display text-3xl">Planner</h2>
-                  <p className="mt-1.5 text-[var(--cdv-mute)]">Reserve funds against a card before you buy.</p>
+                  <p className="mt-1.5 text-[var(--cdv-mute)]">Reserve funds against a card, or add a product and mark it when you buy it.</p>
                 </div>
-                <button type="button" onClick={() => { resetExpenseForm(); setShowExpenseForm(true); }} className="cdv-btn cdv-btn--primary shrink-0">
-                  <Plus size={17} aria-hidden /> Plan Purchase
-                </button>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <button type="button" onClick={() => { resetProductForm(); setShowProductForm(true); }} className="cdv-btn cdv-btn--outline">
+                    <Plus size={17} aria-hidden /> Add product
+                  </button>
+                  <button type="button" onClick={() => { resetExpenseForm(); setShowExpenseForm(true); }} className="cdv-btn cdv-btn--primary">
+                    <Plus size={17} aria-hidden /> Plan Purchase
+                  </button>
+                </div>
               </div>
+
+              <section aria-labelledby="cdv-products-heading" className="cdv-panel overflow-hidden">
+                <div className="flex items-center justify-between gap-4 border-b border-[var(--cdv-hairline)] px-5 py-4">
+                  <h3 id="cdv-products-heading" className="font-semibold text-[var(--cdv-ink)]">Products</h3>
+                  <p className="cdv-eyebrow">{openProducts.length} open</p>
+                </div>
+                {openProducts.length === 0 ? (
+                  <div className="px-6 py-10 text-center">
+                    <p className="font-medium text-[var(--cdv-ink)]">No products yet</p>
+                    <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--cdv-mute)]">Add a product with a fixed price or a range. Mark it purchased when you buy it.</p>
+                  </div>
+                ) : (
+                  <ul className="cdv-divide">
+                    {openProducts.map((product) => {
+                      const cardNames = moneyCardIdsOnProduct(product, cards)
+                        .map((id) => cards.find((card) => card.id === id)?.name)
+                        .filter(Boolean);
+                      const productUrl = normalizeCardLink(product.url);
+                      const priceLabel = product.priceMode === 'range'
+                        ? `${formatShekels(product.priceMin)}–${formatShekels(product.priceMax)}`
+                        : formatShekels(product.amount);
+                      return (
+                        <li key={product.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-semibold text-[var(--cdv-ink)] min-w-0 break-words">{product.name}</p>
+                              <span className="cdv-badge cdv-badge--neutral">{product.priceMode === 'range' ? 'Range' : 'Fixed'}</span>
+                            </div>
+                            <p className="cdv-amount mt-1 text-sm font-semibold text-[var(--cdv-ink)]">{priceLabel}</p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--cdv-mute)]">
+                              {cardNames.length > 0 ? <span className="min-w-0 font-medium text-[var(--cdv-body)]">{cardNames.join(', ')}</span> : <span>No card selected</span>}
+                              {productUrl ? (
+                                <a href={productUrl} target="_blank" rel="noreferrer" aria-label={`Product page for ${product.name}`} className="inline-flex items-center gap-1 font-medium text-[var(--cdv-accent)] underline underline-offset-2">
+                                  Product page <ExternalLink size={12} aria-hidden />
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => beginPurchase(product)}
+                              disabled={purchasingProductId === product.id}
+                              className="cdv-btn cdv-btn--outline !px-3 !py-2"
+                            >
+                              Mark purchased
+                            </button>
+                            <button type="button" onClick={() => startEditProduct(product)} className="cdv-icon-btn" aria-label={`Edit ${product.name}`}><Edit2 size={16} aria-hidden /></button>
+                            <button type="button" onClick={() => deleteProduct(product.id)} className="cdv-icon-btn cdv-icon-btn--danger" aria-label={`Delete ${product.name}`}><Trash2 size={16} aria-hidden /></button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
 
               <section aria-labelledby="cdv-ledger-heading" className="cdv-panel overflow-hidden">
                 <div className="flex items-center justify-between gap-4 border-b border-[var(--cdv-hairline)] px-5 py-4">
-                  <h3 id="cdv-ledger-heading" className="font-semibold text-[var(--cdv-ink)]">Ledger</h3>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <button
+                      type="button"
+                      className="cdv-icon-btn shrink-0"
+                      aria-expanded={ledgerExpanded}
+                      aria-controls="cdv-ledger-log"
+                      aria-label={ledgerExpanded ? 'Collapse ledger log' : 'Expand ledger log'}
+                      onClick={() => setLedgerExpanded((open) => !open)}
+                    >
+                      {ledgerExpanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+                    </button>
+                    <h3 id="cdv-ledger-heading" className="font-semibold text-[var(--cdv-ink)]">Ledger</h3>
+                  </div>
                   <p className="flex items-baseline gap-2">
                     <span className="cdv-eyebrow">Reserved</span>
                     <Money value={totalPlannedExpenses} className="font-semibold text-[var(--cdv-ink)]" />
                   </p>
                 </div>
-                {expenses.length === 0 ? (
+                <div id="cdv-ledger-log">
+                {!ledgerExpanded ? (
+                  <p className="px-5 py-3.5 text-sm text-[var(--cdv-body)]">
+                    {expenses.length === 0
+                      ? 'Nothing in the ledger'
+                      : `${expenses.length} ${expenses.length === 1 ? 'entry' : 'entries'}${ledgerLogSummary.moneyCount > 0 ? ` · ${formatShekels(ledgerLogSummary.money)} logged` : ''}`}
+                  </p>
+                ) : expenses.length === 0 ? (
                   <div className="px-6 py-14 text-center">
                     <Receipt size={28} className="mx-auto mb-4 text-[var(--cdv-faint)]" aria-hidden />
                     <p className="font-medium text-[var(--cdv-ink)]">Nothing planned yet</p>
@@ -3541,6 +3947,11 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                       const isFuture = scheduled ? scheduled > new Date() : false;
                       const merchants = expenseMerchantsForDisplay(expense);
                       const categories = expenseCategoriesForDisplay(expense);
+                      const fundingIds = Array.isArray(expense.fundingCardIds) ? expense.fundingCardIds : [];
+                      const fundingNames = fundingIds.map((id) => cards.find((card) => card.id === id)?.name).filter(Boolean);
+                      const cardLabel = sourceCard?.name
+                        || (fundingNames.length > 0 ? fundingNames.join(', ') : (expense.cardId ? 'Deleted card' : 'No card'));
+                      const productUrl = normalizeCardLink(expense.productUrl);
                       return (
                         <li key={expense.id} className="group flex items-center gap-4 px-5 py-4">
                           <button
@@ -3562,6 +3973,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                 {expense.name}
                               </p>
                               {expense.isCompleted && <span className="cdv-badge cdv-badge--positive">{useRow ? 'Used' : 'Spent'}</span>}
+                              {expense.applyToBalance === false && <span className="cdv-badge cdv-badge--neutral">Balance unchanged</span>}
                               {scheduled && (
                                 <span className={`cdv-badge ${isFuture ? 'cdv-badge--accent' : 'cdv-badge--neutral'}`}>
                                   {formatDate(scheduled)}
@@ -3577,7 +3989,12 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                                 ))
                                 : <span>{useRow ? (sourceCard?.unitLabel || expense.unitLabel || 'Use') : '—'}</span>}
                               <span aria-hidden className="text-[var(--cdv-faint)]">•</span>
-                              <span className="min-w-0 truncate font-medium text-[var(--cdv-body)]">{sourceCard?.name || 'Deleted card'}</span>
+                              <span className="min-w-0 font-medium text-[var(--cdv-body)]">{cardLabel}</span>
+                              {productUrl ? (
+                                <a href={productUrl} target="_blank" rel="noreferrer" aria-label={`Product page for ${expense.name}`} className="inline-flex items-center gap-1 font-medium text-[var(--cdv-accent)] underline underline-offset-2">
+                                  Product page <ExternalLink size={12} aria-hidden />
+                                </a>
+                              ) : null}
                               {merchants.map((m) => (
                                 <span key={m} className="flex items-center gap-1 min-w-0">
                                   <MerchantIcon merchantName={m} category={KNOWN_MERCHANTS[m]?.cat || categories[0] || expense.category} className="w-4 h-4 rounded-[4px] border-0" />
@@ -3601,6 +4018,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
                     })}
                   </ul>
                 )}
+                </div>
               </section>
             </div>
           )}
@@ -4088,7 +4506,7 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
         </main>
 
         <nav aria-label="Main" className="cdv-nav fixed bottom-0 left-0 right-0 z-40 flex justify-around gap-1 px-2 py-1.5 sm:justify-center sm:gap-4 lg:gap-8">
-          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Home' }, { id: 'wallets', icon: CreditCard, label: 'Wallet' }, { id: 'planner', icon: Receipt, label: 'Planner' }, { id: 'insights', icon: Search, label: 'Checkout' }, { id: 'clubs', icon: Gift, label: 'Clubs' }, { id: 'ai', icon: Bot, label: 'Advisor' }].map((item) => (
+          {[{ id: 'wallets', icon: CreditCard, label: 'Wallet' }, { id: 'dashboard', icon: LayoutDashboard, label: 'Portfolio' }, { id: 'planner', icon: Receipt, label: 'Planner' }, { id: 'insights', icon: Search, label: 'Checkout' }, { id: 'clubs', icon: Gift, label: 'Clubs' }, { id: 'ai', icon: Bot, label: 'Advisor' }].map((item) => (
             <button
               key={item.id}
               type="button"
@@ -4808,6 +5226,218 @@ URL: Full https:// URL copied from RETRIEVED, or the word NONE
               })()}
             </div>
           </form>
+        </Modal>
+
+        <Modal isOpen={showProductForm} onClose={resetProductForm} title={editingProductId ? 'Edit product' : 'Add product'}>
+          <form onSubmit={handleSaveProduct} className="space-y-6">
+            <div>
+              <label htmlFor="product-name" className="cdv-label">Name</label>
+              <input id="product-name" type="text" required value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} className="cdv-input" placeholder="e.g. Headphones" autoComplete="off" />
+            </div>
+
+            <fieldset>
+              <legend className="cdv-label">Price</legend>
+              <p className="mb-3 text-xs text-[var(--cdv-mute)]">Fixed amount is one price. Range is a minimum and a maximum, and you confirm what you paid when you buy it.</p>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm font-medium text-[var(--cdv-ink)]">
+                  <input type="radio" name="product-price-mode" checked={newProduct.priceMode === 'fixed'} onChange={() => setNewProduct({ ...newProduct, priceMode: 'fixed' })} className="h-4 w-4 accent-[var(--cdv-accent)]" />
+                  Fixed amount
+                </label>
+                <label className="flex items-center gap-2 text-sm font-medium text-[var(--cdv-ink)]">
+                  <input type="radio" name="product-price-mode" checked={newProduct.priceMode === 'range'} onChange={() => setNewProduct({ ...newProduct, priceMode: 'range' })} className="h-4 w-4 accent-[var(--cdv-accent)]" />
+                  Price range
+                </label>
+              </div>
+              {newProduct.priceMode === 'range' ? (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="product-min" className="cdv-label">Minimum (₪)</label>
+                    <input id="product-min" type="number" required min="0.01" step="0.01" inputMode="decimal" value={newProduct.priceMin} onChange={(e) => setNewProduct({ ...newProduct, priceMin: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label htmlFor="product-max" className="cdv-label">Maximum (₪)</label>
+                    <input id="product-max" type="number" required min="0.01" step="0.01" inputMode="decimal" value={newProduct.priceMax} onChange={(e) => setNewProduct({ ...newProduct, priceMax: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold" placeholder="0.00" />
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <label htmlFor="product-price" className="cdv-label">Amount (₪)</label>
+                  <input id="product-price" type="number" required min="0.01" step="0.01" inputMode="decimal" value={newProduct.amount} onChange={(e) => setNewProduct({ ...newProduct, amount: e.target.value })} className="cdv-input cdv-amount !text-base !font-semibold sm:!w-1/2" placeholder="0.00" />
+                </div>
+              )}
+            </fieldset>
+
+            <div>
+              <label htmlFor="product-url" className="cdv-label">Link (optional)</label>
+              <input id="product-url" type="url" inputMode="url" value={newProduct.url} onChange={(e) => setNewProduct({ ...newProduct, url: e.target.value })} className="cdv-input" placeholder="https://" autoComplete="off" />
+            </div>
+
+            <fieldset>
+              <legend className="cdv-label">Cards to pay with (optional)</legend>
+              <p className="text-xs text-[var(--cdv-mute)]">Choose one or more money cards, or leave this empty. You decide later whether the purchase updates those balances.</p>
+              {unitCardBalances.length > 0 && (
+                <p className="mt-2 text-xs text-[var(--cdv-mute)]">Experience cards track uses, so a price is not taken from them.</p>
+              )}
+              {moneyCardBalances.length === 0 ? (
+                <p className="mt-3 text-sm text-[var(--cdv-mute)]">No money cards in the wallet yet.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {moneyCardBalances.map((card) => (
+                    <li key={card.id}>
+                      <label htmlFor={`product-card-${card.id}`} className="flex cursor-pointer items-center justify-between gap-3 rounded-[var(--cdv-r-md)] border border-[var(--cdv-hairline)] px-3 py-2.5">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <input
+                            id={`product-card-${card.id}`}
+                            type="checkbox"
+                            checked={newProduct.cardIds.includes(card.id)}
+                            onChange={() => toggleProductCard(card.id)}
+                            className="h-4 w-4 shrink-0 rounded accent-[var(--cdv-accent)]"
+                          />
+                          <span className="min-w-0 truncate font-medium text-[var(--cdv-ink)]">{card.name}</span>
+                        </span>
+                        <Money value={card.remaining} className="shrink-0 text-sm text-[var(--cdv-mute)]" />
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </fieldset>
+
+            <div className="border-t border-[var(--cdv-hairline)] pt-6">
+              <button type="submit" className="cdv-btn cdv-btn--primary w-full !py-3">
+                {editingProductId ? 'Save changes' : 'Add product'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal
+          isOpen={!!purchaseFlow}
+          onClose={() => { if (!purchasingProductId) setPurchaseFlow(null); }}
+          title={purchaseFlow?.step === 'cards' ? 'Update card balances?' : 'Amount paid'}
+        >
+          {purchaseFlow?.step === 'amount' && (
+            <form
+              onSubmit={(e) => { e.preventDefault(); confirmPaidAmount(); }}
+              className="space-y-6"
+            >
+              <p className="text-sm text-[var(--cdv-body)]">
+                <span className="font-semibold text-[var(--cdv-ink)]">{purchaseFlow.product.name}</span> was planned between <span className="cdv-amount">{formatShekels(purchaseFlow.product.priceMin)}</span> and <span className="cdv-amount">{formatShekels(purchaseFlow.product.priceMax)}</span>. Enter the amount you actually paid.
+              </p>
+              <div>
+                <label htmlFor="paid-amount" className="cdv-label">Amount paid (₪)</label>
+                <input
+                  id="paid-amount"
+                  type="number"
+                  required
+                  min="0.01"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={purchaseFlow.actualAmount}
+                  onChange={(e) => setPurchaseFlow((prev) => (prev ? { ...prev, actualAmount: e.target.value } : prev))}
+                  className="cdv-input cdv-amount !text-base !font-semibold"
+                  placeholder="0.00"
+                />
+                {(() => {
+                  const entered = roundShekels(purchaseFlow.actualAmount);
+                  const min = Number(purchaseFlow.product.priceMin);
+                  const max = Number(purchaseFlow.product.priceMax);
+                  if (entered == null || entered <= 0 || (entered >= min && entered <= max)) return null;
+                  return <p className="mt-2 text-xs text-[var(--cdv-warning)]">That is outside the planned range. You can still log it.</p>;
+                })()}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="cdv-btn cdv-btn--outline !px-3 !py-2" onClick={() => setPurchaseFlow((prev) => (prev ? { ...prev, actualAmount: String(prev.product.priceMin) } : prev))}>
+                  Use minimum {formatShekels(purchaseFlow.product.priceMin)}
+                </button>
+                <button type="button" className="cdv-btn cdv-btn--outline !px-3 !py-2" onClick={() => setPurchaseFlow((prev) => (prev ? { ...prev, actualAmount: String(prev.product.priceMax) } : prev))}>
+                  Use maximum {formatShekels(purchaseFlow.product.priceMax)}
+                </button>
+              </div>
+              <div className="border-t border-[var(--cdv-hairline)] pt-6">
+                <button type="submit" className="cdv-btn cdv-btn--primary w-full !py-3" disabled={!!purchasingProductId}>
+                  {moneyCardIdsOnProduct(purchaseFlow.product, cards).length > 0 ? 'Continue' : 'Add to ledger'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {purchaseFlow?.step === 'cards' && (() => {
+            const ids = moneyCardIdsOnProduct(purchaseFlow.product, cards);
+            const paid = roundShekels(purchaseFlow.actualAmount) || 0;
+            const assignedCents = allocationCents(purchaseFlow.allocations);
+            const ready = ids.length === 1 || assignedCents === shekelCents(paid);
+            const single = ids.length === 1 ? cards.find((card) => card.id === ids[0]) : null;
+            return (
+              <div className="space-y-6">
+                <p className="text-sm text-[var(--cdv-body)]">
+                  <span className="font-semibold text-[var(--cdv-ink)]">{purchaseFlow.product.name}</span> will be added to the ledger for <span className="cdv-amount">{formatShekels(paid)}</span>.
+                  {single
+                    ? <> Deduct that full amount from <span className="font-semibold text-[var(--cdv-ink)]">{single.name}</span>, or leave the card as it is.</>
+                    : ' Assign how much comes off each card. Balances change only if you update them, and only by the amounts you confirm.'}
+                </p>
+                {ids.length > 1 && (
+                  <div className="space-y-4">
+                    {ids.map((id) => {
+                      const card = cardBalances.find((entry) => entry.id === id);
+                      const share = purchaseFlow.allocations?.[id] ?? '';
+                      const shareAmount = roundShekels(share);
+                      const over = card && shareAmount != null && shareAmount > Number(card.remaining);
+                      return (
+                        <div key={id}>
+                          <label htmlFor={`purchase-card-${id}`} className="cdv-label">{card?.name || 'Card'}</label>
+                          <input
+                            id={`purchase-card-${id}`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={share}
+                            onChange={(e) => setPurchaseFlow((prev) => (prev ? { ...prev, allocations: { ...prev.allocations, [id]: e.target.value } } : prev))}
+                            className="cdv-input cdv-amount !text-base !font-semibold"
+                            placeholder="0.00"
+                          />
+                          <p className={`mt-1 text-xs ${over ? 'text-[var(--cdv-warning)]' : 'text-[var(--cdv-mute)]'}`}>
+                            {formatShekels(card?.remaining || 0)} available{over ? ' · more than this card shows' : ''}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        className="cdv-btn cdv-btn--outline !px-3 !py-2"
+                        onClick={() => setPurchaseFlow((prev) => (prev ? { ...prev, allocations: equalSplitShekels(paid, ids) } : prev))}
+                      >
+                        Split equally
+                      </button>
+                      <p className={`text-sm ${ready ? 'text-[var(--cdv-body)]' : 'text-[var(--cdv-warning)]'}`}>
+                        Assigned <span className="cdv-amount">{formatShekels(assignedCents / 100)}</span> of <span className="cdv-amount">{formatShekels(paid)}</span>
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex flex-col-reverse gap-2 border-t border-[var(--cdv-hairline)] pt-6 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    className="cdv-btn cdv-btn--outline"
+                    disabled={!!purchasingProductId}
+                    onClick={() => commitPurchase(purchaseFlow.product, paid, false, {})}
+                  >
+                    Leave balances unchanged
+                  </button>
+                  <button
+                    type="button"
+                    className="cdv-btn cdv-btn--primary"
+                    disabled={!ready || !!purchasingProductId}
+                    onClick={confirmCardUpdate}
+                  >
+                    {single ? 'Update this card' : 'Update these cards'}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </Modal>
       </div>
     </div>

@@ -237,6 +237,7 @@ export function balanceOverride(card, asOfInput) {
 
 export function expenseCountsTowardBalance(card, expense, asOfInput) {
   if (!expense || expense.cardId !== card.id) return false;
+  if (expense.applyToBalance === false) return false;
   const spec = getCycleSpec(card);
   if (spec && !expenseInSameResetWindow(card, expense, asOfInput)) return false;
   const override = balanceOverride(card, asOfInput);
