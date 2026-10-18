@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-10-11 16:27:11",
+  "last_updated": "2026-10-18 14:01:40",
   "source_url": "https://online.dreamcard.co.il/public/deals",
   "deals": [
     {
@@ -11,17 +11,17 @@
     {
       "m": "FOX HOME",
       "c": "DREAMCARD",
-      "d": "30% הנחה | בחנויות ובאתר"
+      "d": "3 ימים אחרוני | 30% הנחה | בחנויות ובאתר"
     },
     {
       "m": "AMERICAN EAGLE",
       "c": "DREAMCARD",
-      "d": "SALE | עד | 40% הנחה"
+      "d": "SALE | עד- | 40% הנחה"
     },
     {
       "m": "aerie",
       "c": "DREAMCARD",
-      "d": "קולקציית קיץ | עד 50% הנחה"
+      "d": "קולקציית קיץ | -עד | 50% הנחה"
     },
     {
       "m": "sunglass hut",
@@ -31,119 +31,107 @@
     {
       "m": "BILLABONG",
       "c": "DREAMCARD",
-      "d": "קולקציית הקיץ | ₪149.90 - ₪49.90"
+      "d": "קולקציית הקיץ | 49.90 ₪ - 149.90 ₪"
     },
     {
-      "m": "Quiksilver, ROXY",
+      "m": "ROXY",
       "c": "DREAMCARD",
-      "d": "קולקציית הקיץ | 149.90 ₪ - 49.90 ₪"
+      "d": "קולקציית הקיץ | 49.90 ₪ - 149.90 ₪"
     },
     {
       "m": "THE CHILDREN'S PLACE",
       "c": "DREAMCARD",
-      "d": "פרט שני ב- | 50% הנחה | על הקולקציה החדשה"
+      "d": "פרט שני ב- 50% הנחה | על הקולקציה החדשה"
     },
     {
-      "m": "Laline",
+      "m": "Sabina",
       "c": "DREAMCARD",
       "d": "3+3 מתנה | על כל הפריטים בחנות"
     },
     {
       "m": "FOX",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר FOX.CO.IL | קוד מימוש: VIP40",
-      "url": "https://cli.re/wRY8Xy"
+      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה, בקנייה עד 1,000 ₪ | למימוש בחנויות ובאתר FOX.CO.IL | קוד מימוש: VIP-40",
+      "url": "https://cli.re/xRnzp7"
     },
     {
       "m": "FOX HOME",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר FOXHOME.CO.IL | קוד מימוש: DCVIP40 | בלעדי ללקוחות DREAMCARD VIP",
-      "url": "https://cli.re/XrWJKW"
-    },
-    {
-      "m": "sunglass hut",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על משקפי השמש | למימוש בחנויות"
-    },
-    {
-      "m": "THE CHILDREN'S PLACE",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40 | בעדי ללקוחות DREAMCARD VIP",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
-    },
-    {
-      "m": "DREAMCARD VIP",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | שילב | 40% הנחה | על קולקציית אופנת החורף | למימוש בחנויות"
-    },
-    {
-      "m": "ITAY BRANDS",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר ITAYBRANDS.CO.IL | קוד מימוש: DCVIP40",
-      "url": "https://cli.re/9MMnKM"
+      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה, עד 4 פריטים לבחירה | למימוש בחנויות ובאתר FOXHOME.CO.IL | קוד מימוש: VIP-40 | בלעדי ללקוחות DREAMCARD VIP",
+      "url": "https://cli.re/ZrbDwr"
     },
     {
       "m": "AMERICAN EAGLE",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40 | DREAM DAYS | בלעדי ללקוחות DREAMCARD VIP",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
+      "d": "(DreamCard VIP) ללא לקוחות DREAMCARD VIP | 50% הנחה | על הקולקציה החדשה, עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: AEOCTO40",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/ae-vip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
     },
     {
       "m": "aerie",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
+      "d": "(DreamCard VIP) 50% הנחה | על הקולקציה החדשה, עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: AERIEOCTO40 | בעדי ללא קופות DREAMCARD VIP",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/dc-aerie?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
     },
     {
-      "m": "BILLABONG",
+      "m": "sunglass hut",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40 | בעלי ללקוחות DREAMCARD VIP",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
-    },
-    {
-      "m": "Quiksilver",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40 | DREAMCARD VIP"
+      "d": "(DreamCard VIP) בלעדי ללקוחות DREAMCARD VIP | +10% הנחה נוספת | על מבצעי החנות | למימוש בחנויות"
     },
     {
       "m": "RUBY BAY",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
+      "d": "(DreamCard VIP) 50% הנחה | על הפריט השני, עד 4 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: RUBYOCTO40 | בלעדי ללקוחות DREAMCARD VIP",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/ruby-bay-vip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
     },
     {
-      "m": "גולף",
+      "m": "THE CHILDREN'S PLACE",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 50% הנחה | עד 2 פריסים לבחירה | למימוש בחנויות"
+      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: TCPOCTO40 | בעלי לקוחות DREAMCARD VIP",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/the-childrens-place?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
     },
     {
-      "m": "Foot Locker",
+      "m": "JUMBO",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 30% הנחה | בקניית 2 פריטים בלבד | למימוש בחנויות ובאתר FOOTLOCKER.CO.IL | קוד מימוש: VIP-30",
-      "url": "https://cli.re/vRn1z3"
-    },
-    {
-      "m": "MANGO",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40 | DREAMCARD VIP בלעדי ללקוחות",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
-    },
-    {
-      "m": "TERMINAL X",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | TERMINAL X | 30% הנחה | על TERMINALX KIDS ומותגי ספורט נבחרים | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS30 | בעלי רקולאות DREAMCARD VIP",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-all-brands?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_30pctoff_111026"
-    },
-    {
-      "m": "TERMINAL X",
-      "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: DREAMDAYS40",
-      "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-40-off?utm_source=dcvip&utm_medium=web&utm_campaign=dream_days_40pctoff_111026"
+      "d": "(DreamCard VIP) 30% הנחה | על רמקולים, בידוריות ואוזניות | למימוש בחנויות | בלעדי! ללקוחות DREAMCARD VIP"
     },
     {
       "m": "flying tiger copenhagen",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) DREAM DAYS | 30% הנחה | למימוש בחנויות | בעדי ללקוחות DREAMCARD VIP"
+      "d": "(DreamCard VIP) בעדי relocות DREAMCARD VIP | 30 ₪ הנחה | בקנייה ב-100 ₪, כולל כפולות | למימוש בחנויות"
+    },
+    {
+      "m": "שילב",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) בעלי לתקופת DREAMCARD VIP | 30% הנחה | על קולקציית אופנת החורף | למימוש בחנויות"
+    },
+    {
+      "m": "Foot Locker",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) 30% הנחה | על מותג NEW BALANCE | למימוש באתר FOOTLOCKER.CO.IL | קוד מימוש: VIP-NB",
+      "url": "https://cli.re/mnkBQR"
+    },
+    {
+      "m": "TERMINAL X",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) בלעדי לקוחות DREAMCARD VIP | 30% הנחה | על מגוון סניקרס | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: TXSNEAKERSOCT30",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/terminal-x-vip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
+    },
+    {
+      "m": "SABON",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) 50% הנחה | על כל החנות, עד 2 פריטים לבחירה | למימוש בחנויות | בעלי לקוחות DREAMCARD VIP"
+    },
+    {
+      "m": "BILLABONG",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) 40% הנחה | על קפוצ'ונים | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: BILLAOCTO40 | בלעדי ללקוחות DREAMCARD VIP",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/vip-surf-brands?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
+    },
+    {
+      "m": "QUIKSILVER",
+      "c": "DREAMCARD",
+      "d": "(DreamCard VIP) 40% הנחה | על קפוצ'ונים | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: BILLAOCTO40",
+      "url": "https://www.terminalx.com/dreamcard-terminalx/vip-surf-brands?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_191026"
     }
   ]
 }
