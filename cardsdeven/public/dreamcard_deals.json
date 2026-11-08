@@ -1,7 +1,13 @@
 {
-  "last_updated": "2026-11-01 16:51:43",
+  "last_updated": "2026-11-08 16:49:29",
   "source_url": "https://online.dreamcard.co.il/public/deals",
   "deals": [
+    {
+      "m": "FOX",
+      "c": "DREAMCARD",
+      "d": "פוטרים פריט שני ב- | 50% הנחה",
+      "url": "https://cli.re/5Kw9Em"
+    },
     {
       "m": "FOX HOME",
       "c": "DREAMCARD",
@@ -15,7 +21,17 @@
     {
       "m": "aerie",
       "c": "DREAMCARD",
-      "d": "עד - | 40% הנחה"
+      "d": "עד - 4 הנחה | היי 👋, כיצד נוכל לסייע לך?"
+    },
+    {
+      "m": "BILLABONG",
+      "c": "DREAMCARD",
+      "d": "קולקציה חדשה | 30% הנחה"
+    },
+    {
+      "m": "QUIKSILVER ROXY",
+      "c": "DREAMCARD",
+      "d": "קולקציה חדשה | 30% הנחה"
     },
     {
       "m": "MANGO",
@@ -28,24 +44,24 @@
       "d": "עד 50% הנחה | על מגוון פריטים"
     },
     {
-      "m": "Sabon",
+      "m": "Sabina",
       "c": "DREAMCARD",
-      "d": "3+3 מתנה | על כל הפריטים בחנויות"
+      "d": "3+3 מתנה | על כל הפריטים בחנוות"
     },
     {
       "m": "BILLABONG",
       "c": "DREAMCARD",
-      "d": "פריט אחד 20% הנחה | שני פריטים ומעלה 30% הנחה"
+      "d": "שני פרטים ומעלה | 30% הנחה | היי 👋, כיצד נוכל לסייע לך?"
     },
     {
-      "m": "Quiksilver",
+      "m": "QUIKSILVER ROXY",
       "c": "DREAMCARD",
       "d": "פריט אחד 20% הנחה | שני פריטים ומעלה 30% הנחה"
     },
     {
       "m": "sunglass hut",
       "c": "DREAMCARD",
-      "d": "2 ימים אחרונים | זוג ראשון 25% הנחה | זוג שני 40% הנחה"
+      "d": "4 ימים אחרונים | זוג ראשון 25% הנחה | זוג שני 40% הנחה"
     },
     {
       "m": "FOX",
@@ -56,53 +72,53 @@
     {
       "m": "FOX HOME",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 10%+ הנחה נוספת | על מבצעי החנות | למימוש בחנויות ובאתר FOXHOME.CO.IL | קוד מימוש: VIP-10",
+      "d": "(DreamCard VIP) 10%+ הנחה נוספת | על מבצעי החנות | למימוש בחנויות ובאתר FOXHOME.CO.IL | קוד מימוש: VIP-10 | בעלי לקוחות DREAMCARD VIP",
       "url": "https://cli.re/WzzWnm"
     },
     {
       "m": "AMERICAN EAGLE",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בעלי לקוחות DREAMCARD VIP | 60% הנחה | עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: AENOV60",
+      "d": "(DreamCard VIP) 60% הנחה | עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: AENOV60",
       "url": "https://www.terminalx.com/dreamcard-terminalx/american-eagle-vip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     },
     {
       "m": "aerie",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 60% הנחה | עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: AERIENOV60 | בלעדיי לדקות DREAMCARD VIP",
+      "d": "(DreamCard VIP) בלעדיי ללקוחות DREAMCARD VIP | 60% הנחה | פריטים לבחירה באתר TERMINALX.COM | קוד מימוש: AERIENOV60",
       "url": "https://www.terminalx.com/dreamcard-terminalx/aerie-vip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     },
     {
       "m": "sunglass hut",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 10%+ הנחה נוספת | על מבצעי החנויות | למימוש בחנויות | בלעדי ללקוחות DREAMCARD VIP"
+      "d": "(DreamCard VIP) בעדי לקוחות DREAMCARD VIP | +10% הנחה נוספת | על מבצעי החנות | למימוש בחנויות"
     },
     {
       "m": "RUBY BAY",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 50% הנחה | על הפריט השני, עד 4 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: RUBYNOV50 | בלעדי ללקוחות DREAMCARD VIP",
+      "d": "(DreamCard VIP) 50% הנחה | על הפריט השני, עד 4 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: RUBYNOV50",
       "url": "https://www.terminalx.com/dreamcard-terminalx/dcvip-ruby-bay?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     },
     {
       "m": "THE CHILDREN'S PLACE",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: TCPNOV40 | ללא הגבלת זמן | DREAMCARD VIP",
+      "d": "(DreamCard VIP) 40% הנחה | על הקולקציה החדשה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: TCPNOV40 | בלעדי ללקוחות DREAMCARD VIP",
       "url": "https://www.terminalx.com/dreamcard-terminalx/tcp-vip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     },
     {
       "m": "MANGO",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 30% הנחה | על הקולקציה החדשה, עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: MANGONOV30",
+      "d": "(DreamCard VIP) 30% הנחה | על הקולקציה החדשה, עד 3 פריטים לבחירה | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: MANGONOV30 | ללא הגבלת מלאי | DREAMCARD VIP",
       "url": "https://www.terminalx.com/dreamcard-terminalx/vip-mango?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     },
     {
       "m": "ITAY BRANDS",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 30% הנחה | בקניית 3 פריטים ומעלה | למימוש בחנויות | בעדי לקוחות DREAMCARD VIP"
+      "d": "(DreamCard VIP) 30% הנחה | בקניית 3 פריטים ומעלה | למימוש בחנויות | בעלי רקורדות DREAMCARD VIP"
     },
     {
       "m": "flying tiger copenhagen",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בלעדי לקוחות DREAMCARD VIP | 20₪ הנחה | בקנייה ב-100₪, כולל כפולות | למימוש בחנויות"
+      "d": "(DreamCard VIP) בלעדי לקוחות DREAMCARD VIP | מבצע הנחה 10₪, כולל כפולות"
     },
     {
       "m": "JUMBO",
@@ -112,28 +128,28 @@
     {
       "m": "שילב",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 40% הנחה | על קולקציית אופנת החורף | למימוש בחנויות | בלעדי ללקוחות DREAMCARD VIP"
+      "d": "(DreamCard VIP) 40% הנחה | על קולקציית אופנת החורף | למימוש בחנויות | בעלבי ללקחות DREAMCARD VIP"
     },
     {
       "m": "TERMINAL X",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) בעלי לקוחות DREAMCARD VIP | 20% הנחה | על המותג NEW BALANCE | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: TXNEWBALANCE20",
+      "d": "(DreamCard VIP) 20% הנחה | על המותג NEW BALANCE | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: TXNEWBALANCE20 | בלעדי ללקוחות DREAMCARD VIP",
       "url": "https://www.terminalx.com/dreamcard-terminalx/txvip?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     },
     {
       "m": "dyson",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 5% הנחה | על רובוט שואב ושוטף | למימוש בחנויות | בלעדיי ללקוחות DREAMCARD VIP"
+      "d": "(DreamCard VIP) 5% הנחה | על רובוט שואב ושוטף | למימוש בחנויות | בעבור לקוחות DREAMCARD VIP"
     },
     {
       "m": "Sabon",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 50% הנחה | על כל החנות, עד 2 פריטים לבחירה | למימוש בחנויות"
+      "d": "(DreamCard VIP) בעלי לקוחות DREAMCARD VIP | 50% הנחה | על כל החנות, עד 2 פריטים לבחירה | למימוש בחנויות"
     },
     {
       "m": "QUIKSILVER",
       "c": "DREAMCARD",
-      "d": "(DreamCard VIP) 50% הנחה | על קולקציית אופנת החורף | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: BILLANOV50 | בעדי ללקוחות DREAMCARD VIP",
+      "d": "(DreamCard VIP) 50% הנחה | על קולקציית אופנת החורף | למימוש בחנויות ובאתר TERMINALX.COM | קוד מימוש: BILLANOV50 | בלעדיי ללקוחות DREAMCARD VIP",
       "url": "https://www.terminalx.com/dreamcard-terminalx/surf?&utm_source=dcvip&utm_medium=app&utm_campaign=ashrai_011126"
     }
   ]
